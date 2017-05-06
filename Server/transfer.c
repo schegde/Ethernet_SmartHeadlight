@@ -1,12 +1,3 @@
-/*
- * transfer.c
- * 
- * Name: Alec Foster 
- * andrew id: ajfoster
- *
- * Basic server/client for sending images or other binary data over ethernet
- * 
- */
 
 #include <stdio.h>
 #include <time.h>
@@ -16,14 +7,15 @@
 void sendit(int fd);
 void clienterror(int fd, char *cause, char *errnum, 
 		 char *shortmsg, char *longmsg);
-void *send_thread(void *vargp);
-void *receive_thread(void *vargp);
-void *listen_thread(void *vargp);
+void send_func(void *vargp);
+
+
+void listen_func(void *vargp);
 void receive_file(char *getName, char *copyName, char *host, char *port);
 void remove_newline_ch(char *line);
 int Open_w(const char *pathname, int flags, mode_t mode);
 int timeval_subtract (struct timeval *result, struct timeval *x, struct timeval *y);
-static unsigned get_file_size (const char * file_name);
+
 
 
 /*
@@ -33,128 +25,58 @@ static unsigned get_file_size (const char * file_name);
  * 
  */
 int main(int argc, char **argv) {
-    pthread_t tid;
+   
     int errno;
-    char getName[MAXBUF], copyName[MAXBUF]; //
+   // char getName[MAXBUF], copyName[MAXBUF]; //
 
     /* Check command line args */
-    if (argc != 4) {
-		fprintf(stderr, "usage: %s <host> <receive port> <send port>\n", argv[0]);
+    if (argc != 2) {
+		fprintf(stderr, "usage: %s <server listening port>\n", argv[0]);
 		exit(1);
     }
 
     /* simply ignore sigpipe signals, the most elegant solution */
     Signal(SIGPIPE, SIG_IGN);
 
-    //spawn a listener thread so that clients can connect to receive files
+    //Start a listening port so that client can connect to receive files
     
-    Pthread_create(&tid, NULL, listen_thread, argv[3]);
-
-    //now do client stuff below
-    
-    while(1) {
-        printf("\nEnter a file to receive: ");
-        errno = scanf("%s", getName); //susceptible to buffer overflow, but whatevs
-        strcat(getName, "\n");
-        //printf("You Entered: %s", getName);
-        printf("Enter a new file name: ");
-        errno = scanf("%s", copyName);
-        //printf("You Entered: %s\n\n", copyName);
-        receive_file(getName, copyName, argv[1], argv[2]);
-    }
-    
+    listen_func(argv[1]);
+     
 }
 
-void *listen_thread(void *vargp){
+void listen_func(void *vargp){
     int listenfd, *connfd;
-    pthread_t tid;
+    
     struct sockaddr_in clientaddr;
     socklen_t clientlen = sizeof(clientaddr);
 
     char *port = vargp;
     
-    Pthread_detach(pthread_self());
-
+    
     //bind to port
     listenfd = Open_listenfd(port);
+
+    printf("Successfully started a listening server on  port %s, Now connect to this port from client side!\n",port);
+    
     while (1) {
         connfd = Malloc(sizeof(int));
         *connfd = Accept(listenfd, (SA *)&clientaddr, &clientlen);
-        Pthread_create(&tid, NULL, send_thread, connfd);
+        send_func(connfd);
     }
 }
 
-void receive_file(char *getName, char *copyName, char *host, char *port) {
-    int remotefd, filefd, length;
-    char buf[MAXBUF];
-    rio_t remoteRio;
-    struct timeval start, finish, result;
-    gettimeofday(&start, NULL);
-
-    remotefd = Open_clientfd(host, port);
-    Rio_readinitb(&remoteRio, remotefd);
-
-    //first write our request to the server
-    rio_writen(remotefd, getName, strlen(getName));
-
-    
-    //then get back if the file was found or not
-    Rio_readlineb(&remoteRio, buf, MAXLINE);
-    printf("Response: %s", buf);
-    if(!strcmp(buf,"error\n")) {//file not found
-        printf("Client: Error getting file from server\n");
-        Close(remotefd);
-        return;
-    }
-    
-
-    //now actually do some copying
-    filefd = Open(copyName, O_WRONLY|O_CREAT|O_TRUNC, DEF_MODE);
-
-    while ((length = rio_readnb(&remoteRio, buf, MAXBUF)) != 0) {
-        rio_writen(filefd, buf, length);
-    }
-    Close(filefd);
-    Close(remotefd);
-
-    //print some stats about our transfer
-    gettimeofday(&finish, NULL);
-    timeval_subtract(&result, &finish, &start);
-    time_t elapsedSeconds = result.tv_sec;
-    long int elapsedMicros = result.tv_usec;
-    double elapsed = elapsedSeconds + ((double) elapsedMicros)/1000000.0;
-
-    double fileSize = (double) get_file_size(copyName);
-    double speed = fileSize / elapsed;
-
-
-    printf("Elapsed: %lf seconds\n", elapsed);
-    printf("Filesize: %0lf Bytes, %3lf kiloBytes, %lf megaBytes\n", fileSize, fileSize/1000, fileSize/1000000);
-    printf("Speed: %0lf B/s, %3lf kB/s, %lf mB/s\n", speed, speed/1000, speed/1000000);
-
-}
 
 /*
  * 
  * transfer_thread - transfers requested file to client and closes when done
  * 
  */
-void *send_thread(void *vargp) {
+void send_func(void *vargp) {
     int connfd = *((int *)vargp);
-    Pthread_detach(pthread_self());
+   
     Free(vargp);
     sendit(connfd);
     Close(connfd);
-    return NULL;
-}
-
-void *receive_thread(void *vargp) {
-    int connfd = *((int *)vargp);
-    Pthread_detach(pthread_self());
-    Free(vargp);
-    //receiveit(connfd);
-    Close(connfd);
-    return NULL;
 }
 
 /*
@@ -192,30 +114,6 @@ void sendit(int clientfd) {
 }
 
 
-/*
- * clienterror - returns an error message to the client
- */
-void clienterror(int fd, char *cause, char *errnum, 
-         char *shortmsg, char *longmsg) {
-    char buf[MAXBUF], body[MAXBUF];
-
-    /* Build the HTTP response body */
-    sprintf(body, "<html><title>Tiny Error</title>");
-    sprintf(body, "%s<body bgcolor=""ffffff"">\r\n", body);
-    sprintf(body, "%s%s: %s\r\n", body, errnum, shortmsg);
-    sprintf(body, "%s<p>%s: %s\r\n", body, longmsg, cause);
-    sprintf(body, "%s<hr><em>The Ratchet Proxy</em>\r\n", body);
-
-    /* Print the HTTP response */
-    sprintf(buf, "HTTP/1.0 %s %s\r\n", errnum, shortmsg);
-    Rio_writen(fd, buf, strlen(buf));
-    sprintf(buf, "Content-type: text/html\r\n");
-    Rio_writen(fd, buf, strlen(buf));
-    sprintf(buf, "Content-length: %d\r\n\r\n", (int)strlen(body));
-    Rio_writen(fd, buf, strlen(buf));
-    Rio_writen(fd, body, strlen(body));
-}
-
 void remove_newline_ch(char *line) {
     int new_line = strlen(line) -1;
     if (line[new_line] == '\n')
@@ -227,6 +125,7 @@ void remove_newline_ch(char *line) {
 /**********************************
  * Wrappers for Open rewritten
  **********************************/
+
  int Open_w(const char *pathname, int flags, mode_t mode) 
 {
     int rc;
@@ -237,22 +136,6 @@ void remove_newline_ch(char *line) {
 }
 
 
-/***********************************
-* Other People's Code *
-************************************/
-
-
-/* This routine returns the size of the file it is called with. */
-
-static unsigned get_file_size (const char *file_name) {
-    struct stat sb;
-    if (stat (file_name, & sb) != 0) {
-        fprintf (stderr, "'stat' failed for '%s': %s.\n",
-                 file_name, strerror (errno));
-        exit (EXIT_FAILURE);
-    }
-    return sb.st_size;
-}
 
 /* Subtract the ‘struct timeval’ values X and Y,
    storing the result in RESULT.

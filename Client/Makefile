@@ -21,7 +21,8 @@ transfer.o: transfer.c
 #	$(CC) $(CFLAGS) -c cache.c
 
 transfer: transfer.o csapp.o 
-#cache.o
 
 clean:
 	rm *.o transfer
+
+
