@@ -18,5 +18,5 @@ Client's port to connect to , should be same as server's listening port.
 
 Example:
 SERVER] ./transfer 6045
-CLIENT] ./transfer 10.42.0.5 6045 7176
+CLIENT] ./transfer 10.42.0.5 6045
  
