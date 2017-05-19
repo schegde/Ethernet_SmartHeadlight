@@ -6,6 +6,7 @@
 #define ARRAYSIZE 100 
 
 
+
 void sendit(int fd);
 void clienterror(int fd, char *cause, char *errnum, 
      char *shortmsg, char *longmsg);
@@ -95,10 +96,10 @@ void send_func(void *vargp) {
  */
 void sendit(int clientfd) {
     char buf[MAXBUF];
-    int length, filefd;
+    //int length, filefd;
     rio_t clientRio;
 
-    int int_buf[ARRAYSIZE];
+    //int int_buf[ASK_SIZE];
 
     Rio_readinitb(&clientRio, clientfd);
 
@@ -110,9 +111,11 @@ void sendit(int clientfd) {
     long long pointer = atoi(buf);
 
     printf("    Server: Client requested pointer %lld\n",pointer);
-    printf("Dereferencing this gives:%d\n",*((int *)pointer));
+    //  printf("Dereferencing this gives:%d\n",*((int *)pointer));
 
 
+    int array_size_req;
+    rio_readnb(&clientRio,&array_size_req,sizeof(int));
 
 
     // if((filefd = Open_w(buf, O_RDONLY, DEF_MODE)) < 0) { //error opening file
@@ -126,11 +129,12 @@ void sendit(int clientfd) {
     rio_writen(clientfd,buf,strlen(buf));
 
 
-    for(int i = 0;i<ARRAYSIZE;i++){
-       int_buf[i] = *(((int *)(pointer))+i);
-    }
+    // for(int i = 0;i<array_size_req;i++){
+    //    int_buf[i] = *(((int *)(pointer))+i);
+    // }
+    int * send_buf_ptr = (int *)(pointer);
 
-    rio_writen(clientfd,int_buf,sizeof(int)*ARRAYSIZE);
+    rio_writen(clientfd,send_buf_ptr,sizeof(int)*array_size_req);
 
     
     // while ((length = rio_readn(filefd, buf, MAXBUF)) != 0) {
@@ -139,7 +143,7 @@ void sendit(int clientfd) {
 
     //finally close open file descriptor
     //Close(filefd);
-    printf("    Server: Client received file\n");
+    printf("    Server: Client received buffer\n");
 }
 
 

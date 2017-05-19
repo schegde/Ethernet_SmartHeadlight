@@ -4,13 +4,13 @@
 #include "csapp.h"
 
 
-#define ARRAYSIZE 100
+#define ASK_SIZE 30
 
-void receive_file(char *getName, char *copyName, char *host, char *port);
+void receive_file(char *getName, int array_size, char *host, char *port);
 void remove_newline_ch(char *line);
 int Open_w(const char *pathname, int flags, mode_t mode);
 int timeval_subtract (struct timeval *result, struct timeval *x, struct timeval *y);
-static unsigned get_file_size (const char * file_name);
+//static unsigned get_file_size (const char * file_name);
 
 
 /*
@@ -22,7 +22,8 @@ static unsigned get_file_size (const char * file_name);
 int main(int argc, char **argv) {
     
     int errno;
-    char getName[MAXBUF], copyName[MAXBUF]; //
+    char getName[MAXBUF]; //
+    int array_size;
 
     /* Check command line args */
     if (argc != 3) {
@@ -39,17 +40,17 @@ int main(int argc, char **argv) {
         errno = scanf("%s", getName); //susceptible to buffer overflow, but whatevs
         strcat(getName, "\n");
         //printf("You Entered: %s", getName);
-        printf("Enter a new file name: ");
-        errno = scanf("%s", copyName);
+        printf("Enter array_size asked for ");
+        errno = scanf("%d", &array_size);
         //printf("You Entered: %s\n\n", copyName);
-        receive_file(getName, copyName, argv[1], argv[2]);
+        receive_file(getName, array_size, argv[1], argv[2]);
     }
     
 }
 
 
-void receive_file(char *getName, char *copyName, char *host, char *port) {
-    int remotefd, filefd, length;
+void receive_file(char *getName, int array_size, char *host, char *port) {
+    int remotefd; //, filefd, length;
     char buf[MAXBUF];
     rio_t remoteRio;
     struct timeval start, finish, result;
@@ -62,6 +63,7 @@ void receive_file(char *getName, char *copyName, char *host, char *port) {
     //first write our request to the server
     rio_writen(remotefd, getName, strlen(getName));
 
+    rio_writen(remotefd, &array_size,sizeof(int));
     
     //then get back if the file was found or not
     Rio_readlineb(&remoteRio, buf, MAXLINE);
@@ -73,12 +75,12 @@ void receive_file(char *getName, char *copyName, char *host, char *port) {
         return;
     }
     
-    int int_buffer[ARRAYSIZE];
-    rio_readnb(&remoteRio,int_buffer,sizeof(int)*ARRAYSIZE);
+    int int_buffer_2[array_size];
+    rio_readnb(&remoteRio,int_buffer_2,sizeof(int)*array_size);
 
-    for(int i=0;i<ARRAYSIZE;i++){
+    for(int i=0;i<array_size;i++){
         // if(int_buffer[i]!=i)
-            printf("%d\n",int_buffer[i]);
+            printf("%d\n",int_buffer_2[i]);
     }
 
     //now actually do some copying
@@ -100,7 +102,7 @@ void receive_file(char *getName, char *copyName, char *host, char *port) {
     long int elapsedMicros = result.tv_usec;
     double elapsed = elapsedSeconds + ((double) elapsedMicros)/1000000.0;
 
-    double fileSize = (double) get_file_size(copyName);
+    double fileSize = array_size*sizeof(int);
     double speed = fileSize / elapsed;
 
 
@@ -141,15 +143,15 @@ void remove_newline_ch(char *line) {
 
 /* This routine returns the size of the file it is called with. */
 
-static unsigned get_file_size (const char *file_name) {
-    struct stat sb;
-    if (stat (file_name, & sb) != 0) {
-        fprintf (stderr, "'stat' failed for '%s': %s.\n",
-                 file_name, strerror (errno));
-        exit (EXIT_FAILURE);
-    }
-    return sb.st_size;
-}
+// static unsigned get_file_size (const char *file_name) {
+//     struct stat sb;
+//     if (stat (file_name, & sb) != 0) {
+//         fprintf (stderr, "'stat' failed for '%s': %s.\n",
+//                  file_name, strerror (errno));
+//         exit (EXIT_FAILURE);
+//     }
+//     return sb.st_size;
+// }
 
 /* Subtract the ‘struct timeval’ values X and Y,
    storing the result in RESULT.
