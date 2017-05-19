@@ -4,6 +4,8 @@
 #include "csapp.h"
 
 
+#define ARRAYSIZE 100
+
 void receive_file(char *getName, char *copyName, char *host, char *port);
 void remove_newline_ch(char *line);
 int Open_w(const char *pathname, int flags, mode_t mode);
@@ -33,7 +35,7 @@ int main(int argc, char **argv) {
 
      
     while(1) {
-        printf("\nEnter a file to receive: ");
+        printf("\nEnter The buffer pointer to receive: ");
         errno = scanf("%s", getName); //susceptible to buffer overflow, but whatevs
         strcat(getName, "\n");
         //printf("You Entered: %s", getName);
@@ -54,6 +56,7 @@ void receive_file(char *getName, char *copyName, char *host, char *port) {
     gettimeofday(&start, NULL);
 
     remotefd = Open_clientfd(host, port);
+
     Rio_readinitb(&remoteRio, remotefd);
 
     //first write our request to the server
@@ -63,20 +66,31 @@ void receive_file(char *getName, char *copyName, char *host, char *port) {
     //then get back if the file was found or not
     Rio_readlineb(&remoteRio, buf, MAXLINE);
     printf("Response: %s", buf);
+
     if(!strcmp(buf,"error\n")) {//file not found
         printf("Client: Error getting file from server\n");
         Close(remotefd);
         return;
     }
     
+    int int_buffer[ARRAYSIZE];
+    rio_readnb(&remoteRio,int_buffer,sizeof(int)*ARRAYSIZE);
+
+    for(int i=0;i<ARRAYSIZE;i++){
+        // if(int_buffer[i]!=i)
+            printf("%d\n",int_buffer[i]);
+    }
 
     //now actually do some copying
-    filefd = Open(copyName, O_WRONLY|O_CREAT|O_TRUNC, DEF_MODE);
 
-    while ((length = rio_readnb(&remoteRio, buf, MAXBUF)) != 0) {
-        rio_writen(filefd, buf, length);
-    }
-    Close(filefd);
+
+    //filefd = Open(copyName, O_WRONLY|O_CREAT|O_TRUNC, DEF_MODE);
+
+    // while ((length = rio_readnb(&remoteRio, buf, MAXBUF)) != 0) {
+    //     rio_writen(filefd, buf, length);
+    // }
+
+   // Close(filefd);
     Close(remotefd);
 
     //print some stats about our transfer

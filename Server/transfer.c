@@ -3,14 +3,21 @@
 #include <time.h>
 #include "csapp.h"
 
+#define ARRAYSIZE 100 
+
 
 void sendit(int fd);
+void clienterror(int fd, char *cause, char *errnum, 
+     char *shortmsg, char *longmsg);
 void send_func(void *vargp);
-void listen_func(void *vargp);
 
+
+void listen_func(void *vargp);
+void receive_file(char *getName, char *copyName, char *host, char *port);
 void remove_newline_ch(char *line);
 int Open_w(const char *pathname, int flags, mode_t mode);
 int timeval_subtract (struct timeval *result, struct timeval *x, struct timeval *y);
+
 
 
 
@@ -27,8 +34,8 @@ int main(int argc, char **argv) {
 
     /* Check command line args */
     if (argc != 2) {
-		fprintf(stderr, "usage: %s <server listening port>\n", argv[0]);
-		exit(1);
+    fprintf(stderr, "usage: %s <server listening port>\n", argv[0]);
+    exit(1);
     }
 
     /* simply ignore sigpipe signals, the most elegant solution */
@@ -36,6 +43,14 @@ int main(int argc, char **argv) {
 
     //Start a listening port so that client can connect to receive files
     
+    int * buffer = (int *)malloc(ARRAYSIZE*sizeof(int));
+
+    for(int i=0;i<ARRAYSIZE;i++){
+      buffer[i] = i;
+    }
+
+    printf("The pointer to the buffer allocated is:%lld\n",(long long)buffer);
+    printf("dereferenced value is %d\n",*buffer);
     listen_func(argv[1]);
      
 }
@@ -83,29 +98,47 @@ void sendit(int clientfd) {
     int length, filefd;
     rio_t clientRio;
 
+    int int_buf[ARRAYSIZE];
+
     Rio_readinitb(&clientRio, clientfd);
 
-    //first, get the name of the file we want
+    //first, get the Buffer pointer we want. 
 
     rio_readlineb(&clientRio, buf, MAXBUF);
     remove_newline_ch(buf);
-    printf("    Server: Client requested %s\n",buf);
 
-    if((filefd = Open_w(buf, O_RDONLY, DEF_MODE)) < 0) { //error opening file
-        strcpy(buf,"error\n");
-        printf("%s\n", buf);
-        rio_writen(clientfd, buf, strlen(buf));
-        return;
-    };
+    long long pointer = atoi(buf);
+
+    printf("    Server: Client requested pointer %lld\n",pointer);
+    printf("Dereferencing this gives:%d\n",*((int *)pointer));
+
+
+
+
+    // if((filefd = Open_w(buf, O_RDONLY, DEF_MODE)) < 0) { //error opening file
+    //     strcpy(buf,"error\n");
+    //     printf("%s\n", buf);
+    //     rio_writen(clientfd, buf, strlen(buf));
+    //     return;
+    // };
+    
     strcpy(buf,"success\n");
     rio_writen(clientfd,buf,strlen(buf));
-    
-    while ((length = rio_readn(filefd, buf, MAXBUF)) != 0) {
-        rio_writen(clientfd, buf, length);
+
+
+    for(int i = 0;i<ARRAYSIZE;i++){
+       int_buf[i] = *(((int *)(pointer))+i);
     }
 
+    rio_writen(clientfd,int_buf,sizeof(int)*ARRAYSIZE);
+
+    
+    // while ((length = rio_readn(filefd, buf, MAXBUF)) != 0) {
+    //     rio_writen(clientfd, buf, length);
+    // }
+
     //finally close open file descriptor
-    Close(filefd);
+    //Close(filefd);
     printf("    Server: Client received file\n");
 }
 
