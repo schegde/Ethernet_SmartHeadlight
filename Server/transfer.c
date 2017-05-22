@@ -3,7 +3,15 @@
 #include <time.h>
 #include "csapp.h"
 
-#define ARRAYSIZE 100 
+
+//*********************************CUSTOMIZATION**********************************
+//Buffer size.
+#define BUFFERSIZE 100 
+
+//Buffer type
+typedef int buffer_type;
+//********************************************************************************
+
 
 
 
@@ -14,9 +22,8 @@ void send_func(void *vargp);
 
 
 void listen_func(void *vargp);
-void receive_file(char *getName, char *copyName, char *host, char *port);
 void remove_newline_ch(char *line);
-int Open_w(const char *pathname, int flags, mode_t mode);
+//int Open_w(const char *pathname, int flags, mode_t mode);
 int timeval_subtract (struct timeval *result, struct timeval *x, struct timeval *y);
 
 
@@ -42,17 +49,20 @@ int main(int argc, char **argv) {
     /* simply ignore sigpipe signals, the most elegant solution */
     Signal(SIGPIPE, SIG_IGN);
 
-    //Start a listening port so that client can connect to receive files
-    
-    int * buffer = (int *)malloc(ARRAYSIZE*sizeof(int));
+   
 
-    for(int i=0;i<ARRAYSIZE;i++){
+    //Declare and initialize the buffer.
+    
+    buffer_type * buffer = (buffer_type *)malloc(BUFFERSIZE*sizeof(buffer_type));
+
+    for(int i=0;i<BUFFERSIZE;i++){
       buffer[i] = i;
+     
     }
 
     printf("The pointer to the buffer allocated is:%lld\n",(long long)buffer);
-    printf("dereferenced value is %d\n",*buffer);
     listen_func(argv[1]);
+    free(buffer);
      
 }
 
@@ -114,8 +124,8 @@ void sendit(int clientfd) {
     //  printf("Dereferencing this gives:%d\n",*((int *)pointer));
 
 
-    int array_size_req;
-    rio_readnb(&clientRio,&array_size_req,sizeof(int));
+    int size_req;
+    rio_readnb(&clientRio,&size_req,sizeof(int));
 
 
     // if((filefd = Open_w(buf, O_RDONLY, DEF_MODE)) < 0) { //error opening file
@@ -129,12 +139,12 @@ void sendit(int clientfd) {
     rio_writen(clientfd,buf,strlen(buf));
 
 
-    // for(int i = 0;i<array_size_req;i++){
+    // for(int i = 0;i<size_req;i++){
     //    int_buf[i] = *(((int *)(pointer))+i);
     // }
-    int * send_buf_ptr = (int *)(pointer);
+    buffer_type * send_buf_ptr = (buffer_type *)(pointer);
 
-    rio_writen(clientfd,send_buf_ptr,sizeof(int)*array_size_req);
+    rio_writen(clientfd,send_buf_ptr,size_req);
 
     
     // while ((length = rio_readn(filefd, buf, MAXBUF)) != 0) {

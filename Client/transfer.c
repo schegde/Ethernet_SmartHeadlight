@@ -4,13 +4,23 @@
 #include "csapp.h"
 
 
-#define ASK_SIZE 30
+//********************************CUSTOMIZATION************************************************
+//If you change the buffer type, remember to change the format specifier 
+//corresponding to it, in the printf for received buffer!
+typedef int buffer_type;
 
-void receive_file(char *getName, int array_size, char *host, char *port);
+//Comment out the following BUFFER_PRINT if you dont want to print the received buffer.
+#define BUFFER_PRINT
+
+
+
+
+//****************************** FUNCTION PROTOTYPES*****************************************
+
+void receive_file(char *getName, int num_bytes, char *host, char *port);
 void remove_newline_ch(char *line);
 int Open_w(const char *pathname, int flags, mode_t mode);
 int timeval_subtract (struct timeval *result, struct timeval *x, struct timeval *y);
-//static unsigned get_file_size (const char * file_name);
 
 
 /*
@@ -23,7 +33,7 @@ int main(int argc, char **argv) {
     
     int errno;
     char getName[MAXBUF]; //
-    int array_size;
+    int num_bytes;
 
     /* Check command line args */
     if (argc != 3) {
@@ -39,17 +49,17 @@ int main(int argc, char **argv) {
         printf("\nEnter The buffer pointer to receive: ");
         errno = scanf("%s", getName); //susceptible to buffer overflow, but whatevs
         strcat(getName, "\n");
-        //printf("You Entered: %s", getName);
-        printf("Enter array_size asked for ");
-        errno = scanf("%d", &array_size);
-        //printf("You Entered: %s\n\n", copyName);
-        receive_file(getName, array_size, argv[1], argv[2]);
+        printf("Enter num_bytes asked for ");
+        errno = scanf("%d", &num_bytes);
+        receive_file(getName, num_bytes, argv[1], argv[2]);
     }
     
 }
 
 
-void receive_file(char *getName, int array_size, char *host, char *port) {
+//*********************RECEIVE FUNCTION definition***************************************
+
+void receive_file(char *getName, int num_bytes, char *host, char *port) {
     int remotefd; //, filefd, length;
     char buf[MAXBUF];
     rio_t remoteRio;
@@ -60,10 +70,10 @@ void receive_file(char *getName, int array_size, char *host, char *port) {
 
     Rio_readinitb(&remoteRio, remotefd);
 
-    //first write our request to the server
+    //Request the buffer pointer.
     rio_writen(remotefd, getName, strlen(getName));
 
-    rio_writen(remotefd, &array_size,sizeof(int));
+    rio_writen(remotefd, &num_bytes,sizeof(int));
     
     //then get back if the file was found or not
     Rio_readlineb(&remoteRio, buf, MAXLINE);
@@ -75,24 +85,21 @@ void receive_file(char *getName, int array_size, char *host, char *port) {
         return;
     }
     
-    int int_buffer_2[array_size];
-    rio_readnb(&remoteRio,int_buffer_2,sizeof(int)*array_size);
 
-    for(int i=0;i<array_size;i++){
-        // if(int_buffer[i]!=i)
+    buffer_type int_buffer_2[num_bytes/sizeof(buffer_type)];
+    rio_readnb(&remoteRio,int_buffer_2,num_bytes);
+
+
+//***************************************************PRINT THE BUFFER****************************************
+    #ifdef BUFFER_PRINT
+    for(int i=0;i<(num_bytes/sizeof(buffer_type));i++){
+        
             printf("%d\n",int_buffer_2[i]);
     }
+    #endif
+//***********************************************************************************************************
 
-    //now actually do some copying
-
-
-    //filefd = Open(copyName, O_WRONLY|O_CREAT|O_TRUNC, DEF_MODE);
-
-    // while ((length = rio_readnb(&remoteRio, buf, MAXBUF)) != 0) {
-    //     rio_writen(filefd, buf, length);
-    // }
-
-   // Close(filefd);
+    
     Close(remotefd);
 
     //print some stats about our transfer
@@ -102,7 +109,7 @@ void receive_file(char *getName, int array_size, char *host, char *port) {
     long int elapsedMicros = result.tv_usec;
     double elapsed = elapsedSeconds + ((double) elapsedMicros)/1000000.0;
 
-    double fileSize = array_size*sizeof(int);
+    double fileSize = num_bytes*sizeof(int);
     double speed = fileSize / elapsed;
 
 
