@@ -6,7 +6,8 @@
 #include "csapp.h"
 
 extern int STOP_FLAG;
-extern int READY;
+extern int CHANGE_FLAG;
+//extern int READY;
 
 
 void sendit(int fd);
@@ -20,6 +21,8 @@ void remove_newline_ch(char *line);
 //int Open_w(const char *pathname, int flags, mode_t mode);
 int timeval_subtract (struct timeval *result, struct timeval *x, struct timeval *y);
 
-void poll_mode();
+void operate_mode();
+void server_mode();
+void client_mode();
 
 #endif

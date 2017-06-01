@@ -8,6 +8,8 @@
 //Buffer size.
 #define BUFFERSIZE 100 
 
+#define PORT "6045"
+
 //Buffer type
 typedef int buffer_type;
 
@@ -20,6 +22,8 @@ typedef int buffer_type;
 
 //This can be set by a top level application to break the listening loop, and for a chance to change mode
 int STOP_FLAG;  
+
+int CHANGE_FLAG;
 
 int MODE;
 
@@ -41,11 +45,8 @@ And install this handler for that signal in main();
 */
 void sig_handler(int sig_num){
 
-// printf("Interrupted!!\n");
-
     STOP_FLAG = 1;      //Interrupted by an external signal.
-
-   
+  
 }
 
 /*
@@ -65,55 +66,69 @@ int main(int argc, char **argv) {
 
     Signal(SIGTSTP, sig_handler); //Ctrl-Z for interruption!
 
-    poll_mode();
+    CHANGE_FLAG =1; //Specify the change flag for server transmission behaviour.
+
+    operate_mode();
        
 }
 
 
-void poll_mode(){
-
-
-
-    int errno;
-    char getName[MAXBUF];// copyName[MAXBUF]; 
-    int num_bytes;
+void operate_mode(){
     
-    /* simply ignore sigpipe signals, the most elegant solution */
-
-
     while(1){
 
-    STOP_FLAG = 0; //Reset the flag, this is a new role start!
+        STOP_FLAG = 0; //Reset the flag, this is a new role start!
 
    
-    printf("Select the mode you want to operate in? Hit 1 for client mode and 0 for server mode:");
-    errno = scanf("%d",&MODE);
+        printf("Select the mode you want to operate in? Hit 1 for client mode and 0 for server mode:");
+        errno = scanf("%d",&MODE);
     
 
-    //Declare and initialize the buffer.
-    if(MODE==SERVER_MODE){
-        //Server Mode
-    char port[10];
+        
+        if(MODE==SERVER_MODE){
+            server_mode();
+        }
+        else{
+            client_mode();
+        
+        }
+    }   
+ 
+}
+
+
+void server_mode(){
+
+    //Server Mode
+    int errno;
+    char port[10]=PORT;
+    int listenfd, *connfd;    
+    struct sockaddr_in clientaddr;
+    socklen_t clientlen = sizeof(clientaddr);
+
+
     printf("Server mode selected!\n");
+
+    //*************************ALLOCATE BUFFERS and INITIALIZE HERE*********************//
+    //Allocate and initialize the buffers on server side !!!
     buffer = (buffer_type *)malloc(BUFFERSIZE*sizeof(buffer_type));
 
     for(int i=0;i<BUFFERSIZE;i++){
       buffer[i] = i;
       
     }
+    //**********************************************************************************
+
 
     printf("The pointer to the buffer allocated is:%lld\n",(long long)buffer);
-    printf("Enter the listening port for the server:");
-    errno = scanf("%s",port);
 
-    //**************************former listen func();**************
-    int listenfd, *connfd;
-    
-    struct sockaddr_in clientaddr;
-    socklen_t clientlen = sizeof(clientaddr);
+
+    //Take the port from the user->can be hard coded to a particular value.
+    // printf("Enter the listening port for the server:"); 
+    // errno = scanf("%s",port);
+  
 
       
-    //bind to port
     listenfd = Open_listenfd(port);
 
     printf("Successfully started a listening server on  port %s, Now connect to this port from client side!\n",port);
@@ -127,23 +142,27 @@ void poll_mode(){
         Free(connfd);
         sendit(loc_connfd);
         Close(loc_connfd);
-        //send_func(connfd);
+        
     }
-    //**************************
-    free(buffer);
-    }
-
     
+    free(buffer);
+    
+}
 
-    else{
+void client_mode(){
+        int errno;
+        char getName[MAXBUF];
+        int num_bytes;
+        char host[30];
+        char port[10]=PORT;
 
         //Client mode
       printf("Client mode selected!\n");
-      char host[30], port[10];
+     
       printf("Enter the Host IP address to connect to:");
       errno = scanf("%s",host);
-      printf("Enter the port on the host to connect to:");
-      errno = scanf("%s",port); 
+      // printf("Enter the port on the host to connect to:");
+      // errno = scanf("%s",port); 
 
     while(1) {
 
@@ -155,58 +174,17 @@ void poll_mode(){
         errno = scanf("%d", &num_bytes);
         long long buf_pointer = atoi(getName);
 
+        //Send the buffer pointer in long long format, and num_bytes in int:
         receive_file(&buf_pointer, num_bytes, host, port);
+        
         if(STOP_FLAG)
           break;
         
     }
 
-    }
-    }   
- 
 }
 
 
-
-// void listen_func(void *vargp){
-    
-//     int listenfd, *connfd;
-    
-//     struct sockaddr_in clientaddr;
-//     socklen_t clientlen = sizeof(clientaddr);
-
-//     char *port = vargp;
-    
-    
-//     //bind to port
-//     listenfd = Open_listenfd(port);
-
-//     printf("Successfully started a listening server on  port %s, Now connect to this port from client side!\n",port);
-    
-//     while (1) {
-//         if(STOP_FLAG)
-//           break;
-//         connfd = Malloc(sizeof(int));
-//         *connfd = Accept(listenfd, (SA *)&clientaddr, &clientlen);
-//         send_func(connfd);
-// }
-  
-    
-// }
-
-
-/*
- * 
- * transfer_thread - transfers requested file to client and closes when done
- * 
- */
-// void send_func(void *vargp) {
-//     int connfd = *((int *)vargp);
-   
-//     Free(vargp);
-//     sendit(connfd);
-//     Close(connfd);
-// }
 
 /*
  * sendit - sends preset file to client
