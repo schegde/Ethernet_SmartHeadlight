@@ -28,7 +28,8 @@ clean:
 
 git_single:
 	git add .;\
-	@read -p "Enter commit message:" commit_msg; \
+	echo -n "Enter commit message:" ;\
+	read commit_msg; \
 	git commit -m commit_msg; \
 	git push -u origin master single_program;
 
