@@ -5,10 +5,14 @@
 
 
 //*********************************CUSTOMIZATION**********************************
+
+
+
+//Port number used for connections, should be a number in string format.
+#define PORT "6045" 
+
 //Buffer size.
 #define BUFFERSIZE 100 
-
-#define PORT "6045"
 
 //Buffer type
 typedef int buffer_type;
@@ -17,8 +21,11 @@ typedef int buffer_type;
 #define SERVER_MODE 0
 #define CLIENT_MODE 1
 
-
+//Comment the below line to stop printing the received buffer on client side
 #define BUFFER_PRINT
+
+//Comment the below line to stop printing most of debug info
+#define DEBUG_PRINT
 
 //This can be set by a top level application to break the listening loop, and for a chance to change mode
 int STOP_FLAG;  
@@ -26,9 +33,6 @@ int STOP_FLAG;
 int CHANGE_FLAG;
 
 int MODE;
-
-buffer_type * buffer;
-int listenfd, *connfd;
 
 
 //********************************************************************************
@@ -107,31 +111,32 @@ void server_mode(){
     socklen_t clientlen = sizeof(clientaddr);
 
 
-    printf("Server mode selected!\n");
+    #ifdef DEBUG_PRINT
+        printf("Server mode selected!\n");
+    #endif
 
-    //*************************ALLOCATE BUFFERS and INITIALIZE HERE*********************//
+    //*************************ALLOCATE BUFFERS and INITIALIZE THEM HERE*********************//
     //Allocate and initialize the buffers on server side !!!
+    buffer_type * buffer;
     buffer = (buffer_type *)malloc(BUFFERSIZE*sizeof(buffer_type));
 
     for(int i=0;i<BUFFERSIZE;i++){
       buffer[i] = i;
       
     }
+    #ifdef DEBUG_PRINT
+        printf("The pointer to the buffer allocated is:%lld\n",(long long)buffer);
+    #endif
+
     //**********************************************************************************
 
-
-    printf("The pointer to the buffer allocated is:%lld\n",(long long)buffer);
-
-
-    //Take the port from the user->can be hard coded to a particular value.
-    // printf("Enter the listening port for the server:"); 
-    // errno = scanf("%s",port);
-  
-
-      
+     
     listenfd = Open_listenfd(port);
 
+   
     printf("Successfully started a listening server on  port %s, Now connect to this port from client side!\n",port);
+        
+  
     
     while (1) {
         if(STOP_FLAG)
@@ -140,7 +145,7 @@ void server_mode(){
         *connfd = Accept(listenfd, (SA *)&clientaddr, &clientlen);
         int loc_connfd = *connfd;
         Free(connfd);
-        sendit(loc_connfd);
+        send_file(loc_connfd);
         Close(loc_connfd);
         
     }
@@ -157,7 +162,9 @@ void client_mode(){
         char port[10]=PORT;
 
         //Client mode
-      printf("Client mode selected!\n");
+        #ifdef DEBUG_PRINT
+            printf("Client mode selected!\n");
+        #endif        
      
       printf("Enter the Host IP address to connect to:");
       errno = scanf("%s",host);
@@ -176,7 +183,7 @@ void client_mode(){
 
         //Send the buffer pointer in long long format, and num_bytes in int:
         receive_file(&buf_pointer, num_bytes, host, port);
-        
+
         if(STOP_FLAG)
           break;
         
@@ -189,29 +196,24 @@ void client_mode(){
 /*
  * sendit - sends preset file to client
  */
-void sendit(int clientfd) {
+void send_file(int clientfd) {
     char buf[MAXBUF];
-    //int length, filefd;
+   
     rio_t clientRio;
 
-    //int int_buf[ASK_SIZE];
-
     Rio_readinitb(&clientRio, clientfd);
-
-    //first, get the Buffer pointer we want. 
-
-    //rio_readlineb(&clientRio, buf, MAXBUF);
-    //remove_newline_ch(buf);
 
     long long pointer;
     rio_readnb(&clientRio,&pointer,sizeof(long long));
 
-    printf("    Server: Client requested pointer %lld\n",pointer);
+
+    #ifdef DEBUG_PRINT
+        printf("    Server: Client requested pointer %lld\n",pointer);
+    #endif  
+    
 
     int size_req;
     rio_readnb(&clientRio,&size_req,sizeof(int));
-
-
 
     
     strcpy(buf,"success\n");
@@ -221,8 +223,10 @@ void sendit(int clientfd) {
 
     rio_writen(clientfd,send_buf_ptr,size_req);
 
-  
-    printf("    Server: Client received buffer\n");
+    #ifdef DEBUG_PRINT
+        printf("    Server: Client received buffer\n");
+    #endif  
+        
 }
 
 
@@ -236,8 +240,11 @@ void receive_file(long long *ptr, int num_bytes, char *host, char *port) {
     int remotefd; //, filefd, length;
     char buf[MAXBUF];
     rio_t remoteRio;
-    struct timeval start, finish, result;
-    gettimeofday(&start, NULL);
+
+    #ifdef DEBUG_PRINT
+        struct timeval start, finish, result;
+        gettimeofday(&start, NULL);
+    #endif
 
     remotefd = Open_clientfd(host, port);
 
@@ -250,8 +257,11 @@ void receive_file(long long *ptr, int num_bytes, char *host, char *port) {
     
     //then get back if the file was found or not
     Rio_readlineb(&remoteRio, buf, MAXLINE);
-    printf("Response: %s", buf);
 
+    #ifdef DEBUG_PRINT
+        printf("Response: %s", buf);
+    #endif  
+    
     if(!strcmp(buf,"error\n")) {//file not found
         printf("Client: Error getting file from server\n");
         Close(remotefd);
@@ -276,19 +286,23 @@ void receive_file(long long *ptr, int num_bytes, char *host, char *port) {
     Close(remotefd);
 
     //print some stats about our transfer
-    gettimeofday(&finish, NULL);
-    timeval_subtract(&result, &finish, &start);
-    time_t elapsedSeconds = result.tv_sec;
-    long int elapsedMicros = result.tv_usec;
-    double elapsed = elapsedSeconds + ((double) elapsedMicros)/1000000.0;
 
-    double fileSize = num_bytes*sizeof(int);
-    double speed = fileSize / elapsed;
+    #ifdef DEBUG_PRINT
+        gettimeofday(&finish, NULL);
+        timeval_subtract(&result, &finish, &start);
+        time_t elapsedSeconds = result.tv_sec;
+        long int elapsedMicros = result.tv_usec;
+        double elapsed = elapsedSeconds + ((double) elapsedMicros)/1000000.0;
+
+        double fileSize = num_bytes*sizeof(int);
+        double speed = fileSize / elapsed;
 
 
-    printf("Elapsed: %lf seconds\n", elapsed);
-    printf("Filesize: %0lf Bytes, %3lf kiloBytes, %lf megaBytes\n", fileSize, fileSize/1000, fileSize/1000000);
-    printf("Speed: %0lf B/s, %3lf kB/s, %lf mB/s\n", speed, speed/1000, speed/1000000);
+        printf("Elapsed: %lf seconds\n", elapsed);
+        printf("Filesize: %0lf Bytes, %3lf kiloBytes, %lf megaBytes\n", fileSize, fileSize/1000, fileSize/1000000);
+        printf("Speed: %0lf B/s, %3lf kB/s, %lf mB/s\n", speed, speed/1000, speed/1000000);
+    #endif 
+    
 
 }
 
