@@ -24,4 +24,12 @@ transfer: transfer.o csapp.o
 #cache.o
 
 clean:
-	rm *.o transfer
+	rm *.o transfer;
+
+git_single:
+	git add .;\
+	@read -p "Enter commit message:" commit_msg; \
+	git commit -m commit_msg; \
+	git push -u origin master single_program;
+
+
