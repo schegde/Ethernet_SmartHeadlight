@@ -23,8 +23,8 @@ transfer.o: transfer.c
 transfer: transfer.o csapp.o 
 #cache.o
 
-#clean:
-#	rm *.o transfer;
+clean:
+	rm *.o transfer;
 
 git_single:
 	rm *.o transfer; \
