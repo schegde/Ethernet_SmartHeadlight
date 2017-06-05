@@ -28,7 +28,7 @@ typedef int buffer_type;
 #define DEBUG_PRINT
 
 //This can be set by a top level application to break the listening loop, and for a chance to change mode
-int STOP_FLAG;  
+int STOP_FLAG; 
 
 int CHANGE_FLAG;
 
@@ -99,6 +99,8 @@ void operate_mode(){
 
     CHANGE_FLAG =1; //Specify the change flag for server transmission behaviour.
 
+
+
     
     while(1){
 
@@ -112,11 +114,32 @@ void operate_mode(){
 
         
         if(MODE==SERVER_MODE){
-            server_mode();
+
+            //*************************ALLOCATE BUFFERS and INITIALIZE THEM HERE*********************//
+            //Allocate and initialize the buffers on server side !!!
+            buffer_type * buffer;
+            buffer = (buffer_type *)malloc(BUFFERSIZE*sizeof(buffer_type));
+
+            for(int i=0;i<BUFFERSIZE;i++){
+                buffer[i] = i;
+      
+            }
+            #ifdef DEBUG_PRINT
+                printf("The pointer to the buffer allocated is:%lld\n",(long long)buffer);
+            #endif
+
+            //******************************************************************************************
+
+            server_mode(); //Call the server routine!
+
+            free(buffer); 
+            //CAUTION!!!!
+            //This program frees the allocated buffer to avoid memory leaks! Remove this if the buffer needs
+            //to be used later .
+            
         }
         else{
-            client_mode();
-        
+            client_mode();        
         }
     }   
  
@@ -137,20 +160,6 @@ void server_mode(){
         printf("Server mode selected!\n");
     #endif
 
-    //*************************ALLOCATE BUFFERS and INITIALIZE THEM HERE*********************//
-    //Allocate and initialize the buffers on server side !!!
-    buffer_type * buffer;
-    buffer = (buffer_type *)malloc(BUFFERSIZE*sizeof(buffer_type));
-
-    for(int i=0;i<BUFFERSIZE;i++){
-      buffer[i] = i;
-      
-    }
-    #ifdef DEBUG_PRINT
-        printf("The pointer to the buffer allocated is:%lld\n",(long long)buffer);
-    #endif
-
-    //******************************************************************************************
 
      
     listenfd = Open_listenfd(port);
@@ -160,18 +169,14 @@ void server_mode(){
         
   
     
-    while (1) {
-        
+           
         connfd = Malloc(sizeof(int));
         *connfd = Accept(listenfd, (SA *)&clientaddr, &clientlen);
         int loc_connfd = *connfd;
         Free(connfd);
         send_file(loc_connfd);
         Close(loc_connfd);
-        
-    }
-    
-    free(buffer);
+  
     
 }
 
@@ -181,6 +186,7 @@ void client_mode(){
         int num_bytes;
         char host[30];
         char port[10]=PORT;
+        int client_stop_flag=0;
 
         //Client mode
         #ifdef DEBUG_PRINT
@@ -191,6 +197,8 @@ void client_mode(){
       errno = scanf("%s",host);
       // printf("Enter the port on the host to connect to:");
       // errno = scanf("%s",port); 
+
+      int remotefd = Open_clientfd(host, port);
 
     while(1) {
 
@@ -203,12 +211,13 @@ void client_mode(){
         long long buf_pointer = atoi(getName);
 
         //Send the buffer pointer in long long format, and num_bytes in int:
-        receive_file(&buf_pointer, num_bytes, host, port);
 
-        if(STOP_FLAG)
-          break;
-        
+        receive_file(&buf_pointer, num_bytes, remotefd , &client_stop_flag);
+        if(client_stop_flag){
+            break;
+        }             
     }
+    Close(remotefd);
 
 }
 
@@ -224,9 +233,15 @@ void send_file(int clientfd) {
 
     Rio_readinitb(&clientRio, clientfd);
 
-    int resp_indicator;
+    int recvd_resp_indicator,resp_indicator;
+
+    bool loc_stop_flag = false;
 
     long long pointer;
+
+
+    while(1){ //Looper for new buffer request and process it!
+
     rio_readnb(&clientRio,&pointer,sizeof(long long));
 
 
@@ -239,9 +254,6 @@ void send_file(int clientfd) {
     rio_readnb(&clientRio,&size_req,sizeof(int));
 
     
-    strcpy(buf,"success\n");
-    rio_writen(clientfd,buf,strlen(buf));
-
     buffer_type * send_buf_ptr = (buffer_type *)(pointer);
 
 
@@ -250,35 +262,24 @@ void send_file(int clientfd) {
     //to receive a new buffer request and number of bytes request. All looping while blocks should also poll for the STOP_FLAG 
     //to switch the roles. NOTE!!!! remove the STOP flag looping in previous calling function, and use it here.
 
-    
+    resp_indicator = ACK;
+    rio_writen(clientfd,&resp_indicator,sizeof(int));
 
     //Irrespective of change flag , send the buffer for one time anyway!
     rio_writen(clientfd,send_buf_ptr,size_req);
 
     //Read the response from the client to see weather to continue/stop/break for role reversal!
-    rio_readnb(&clientRio,&resp_indicator,sizeof(int));
+    rio_readnb(&clientRio,&recvd_resp_indicator,sizeof(int));
 
-
-
-
-
-//*****************************************************************************************************
-    if(resp_indicator==ACK){
-        //GOod to go continue with change flag based work!
-
-
-
+    if(recvd_resp_indicator==NACK){
+        continue;
+        //QUIT REST OF CODE, START FROM new buffer request!
     }
-    else if(resp_indicator==NACK){
-        //Switch to new buffer request go to previous code block.
-
+    if(STOP_FLAG){
+        resp_indicator = NACK;
+        rio_writen(clientfd,&resp_indicator,sizeof(int));
+        break;
     }
-    else{
-        //Role reversal! quit!
-
-
-    }
-
 
 
 
@@ -286,46 +287,45 @@ void send_file(int clientfd) {
 
     while(1){
 
-    int current_value = CHANGE_FLAG;
+        int current_value = CHANGE_FLAG;
 
-    while(1){
+        while(1){
 
-        if((current_value)!=CHANGE_FLAG){ //Value of flag changed! send data once and wait for response!
-            //Time this as a constraint for change flag transition allowed times!
-            rio_writen(clientfd,send_buf_ptr,size_req);
-            rio_readnb(&clientRio,&resp_indicator,sizeof(int));
-            break;
+            if((current_value)!=CHANGE_FLAG){ //Value of flag changed! send data once and wait for response!
+                //***************************NOTE************************************
+                //Time this as a constraint for change flag transition allowed times!
+                resp_indicator = ACK;
+                rio_writen(clientfd,&resp_indicator,sizeof(int));
+                rio_writen(clientfd,send_buf_ptr,size_req);
+                rio_readnb(&clientRio,&recvd_resp_indicator,sizeof(int));
+                break;
+            }
+
+            if(STOP_FLAG){
+               loc_stop_flag =true;
+               resp_indicator =  NACK;
+               rio_writen(clientfd,&resp_indicator,sizeof(int));
+               break;
+           }
         }
-        //***************************************DEADLOCK POSSIBILITY HERE!***************************
-        //Find a way to break this loop here!!! timer based??!! counter based?? CREATE A NEW CONTROL SIGNAL???!!
-        //CLient here would be blocking on a read, and unless CHANGE_FLAG changes, server wont send anything->deadlock
-    }
-    if(resp_indicator==NACK){
-        break; //execute from new buffer read request block!
-    }
-    if(resp_indicator==STOP_MSG){
-        break; //exit and switch role!!! 
 
-
-    } 
+        if(recvd_resp_indicator==NACK){
+            break; //execute from new buffer read request block!
+        }
+        if(loc_stop_flag){
+            break; // Break to switch role.
+        }
 
     }
+
+    if(loc_stop_flag){
+        break; //Break new buffer request loop to get switch role loop.
+    }
+
+}
 
 
     //************************************************************************************************
-
-    
-
-    // while((current_value==CHANGE_FLAG)&&(STOP_FLAG==0));  //Wait till the CHANGE_FLAG changes!
-    
-    // if(STOP_FLAG==0)
-    // rio_writen(clientfd,send_buf_ptr,size_req);
-
-
-
-    // }
-
-    // rio_writen(clientfd,send_buf_ptr,size_req);
 
     #ifdef DEBUG_PRINT
         printf("    Server: Client received buffer\n");
@@ -340,19 +340,13 @@ void remove_newline_ch(char *line) {
         line[new_line] = '\0';
 }
 
-void receive_file(long long *ptr, int num_bytes, char *host, char *port) {
-    int remotefd; //, filefd, length;
+void receive_file(long long *ptr, int num_bytes, int remotefd, int * client_stop_flag) {
+    
     char buf[MAXBUF];
     rio_t remoteRio;
 
     int resp_indicator;
-
-    // #ifdef DEBUG_PRINT
-    //     struct timeval start, finish, result;
-    //     gettimeofday(&start, NULL);
-    // #endif
-
-    remotefd = Open_clientfd(host, port);
+    int recvd_resp_indicator;
 
     Rio_readinitb(&remoteRio, remotefd);
 
@@ -362,21 +356,7 @@ void receive_file(long long *ptr, int num_bytes, char *host, char *port) {
     //Request the number of bytes.
     rio_writen(remotefd, &num_bytes,sizeof(int));
     
-    //then get back if the file was found or not
-    Rio_readlineb(&remoteRio, buf, MAXLINE);
 
-    #ifdef DEBUG_PRINT
-        printf("Response: %s", buf);
-    #endif  
-
-    //**********************************CHECK!!!!!!!! FOR CLEANUP on unexpected exit here*****************
-    
-    if(!strcmp(buf,"error\n")) {//file not found
-        printf("Client: Error getting file from server\n");
-        Close(remotefd);
-        return;
-    }
-    
 
     //*****************************************READ THE BUFFER********************************************
     buffer_type * int_buffer_2 = (buffer_type *)malloc(num_bytes/sizeof(buffer_type));
@@ -385,24 +365,37 @@ void receive_file(long long *ptr, int num_bytes, char *host, char *port) {
 
     while(1){ //If Stop_flag is raised quit!
 
-        rio_readnb(&remoteRio,int_buffer_2,num_bytes);
-          
-        if(DISCONTINUE_FLAG==0){
-            //Send ACK  and continue!
-            resp_indicator = ACK;
-            rio_writen(remotefd,&resp_indicator,sizeof(int)); 
-          
-        }
-        else{
-            //Send NACK and break!
-            resp_indicator = NACK;
-            rio_writen(remotefd,&resp_indicator,sizeof(int)); 
-            break;  
-        }
+        rio_readnb(&clientRio,&recvd_resp_indicator,sizeof(int));
 
-        if(STOP_FLAG){ //Send Stop message to switch roles! and break.
-            resp_indicator = STOP_MSG;
-            rio_writen(remotefd,&resp_indicator,sizeof(int));
+
+        if(recvd_resp_indicator==ACK){
+
+            rio_readnb(&remoteRio,int_buffer_2,num_bytes);
+
+            //*********************************CONSUME THE BUFFER(here buffer is printed)********************************
+            #ifdef BUFFER_PRINT
+            for(int i=0;i<(num_bytes/sizeof(buffer_type));i++){
+                
+                    printf("%d\n",int_buffer_2[i]);
+            }
+            #endif
+            //***********************************************************************************************************
+
+            if(DISCONTINUE_FLAG==0){
+                //Send ACK  and continue!
+                resp_indicator = ACK;
+                rio_writen(remotefd,&resp_indicator,sizeof(int)); 
+            }
+            else{
+                //Send NACK and break!
+                resp_indicator = NACK;
+                rio_writen(remotefd,&resp_indicator,sizeof(int)); 
+                break;  
+            }
+
+        }
+        else{   //NACK received. switch roles!!
+            *client_stop_flag = 1;
             break;
         }
     }
@@ -412,78 +405,9 @@ void receive_file(long long *ptr, int num_bytes, char *host, char *port) {
     //based on a continue flag. if continue flag =0 send ACK. if continue flag = 1 send NACK.
 
     free(int_buffer_2);
-//***************************************************PRINT THE BUFFER****************************************
-    #ifdef BUFFER_PRINT
-    for(int i=0;i<(num_bytes/sizeof(buffer_type));i++){
-        
-            printf("%d\n",int_buffer_2[i]);
-    }
-    #endif
-//***********************************************************************************************************
 
-    
-    Close(remotefd);
-
-    //print some stats about our transfer
-
-    // #ifdef DEBUG_PRINT
-    //     gettimeofday(&finish, NULL);
-    //     timeval_subtract(&result, &finish, &start);
-    //     time_t elapsedSeconds = result.tv_sec;
-    //     long int elapsedMicros = result.tv_usec;
-    //     double elapsed = elapsedSeconds + ((double) elapsedMicros)/1000000.0;
-
-    //     double fileSize = num_bytes*sizeof(int);
-    //     double speed = fileSize / elapsed;
-
-
-    //     printf("Elapsed: %lf seconds\n", elapsed);
-    //     printf("Filesize: %0lf Bytes, %3lf kiloBytes, %lf megaBytes\n", fileSize, fileSize/1000, fileSize/1000000);
-    //     printf("Speed: %0lf B/s, %3lf kB/s, %lf mB/s\n", speed, speed/1000, speed/1000000);
-    // #endif 
-    
-
+ 
+   
 }
 
 
-/**********************************
- * Wrappers for Open rewritten
- **********************************/
-
- int Open_w(const char *pathname, int flags, mode_t mode) 
-{
-    int rc;
-
-    if ((rc = open(pathname, flags, mode))  < 0)
-        fprintf(stderr, "Open error: %s\n", strerror(errno));
-    return rc;
-}
-
-
-
-/* Subtract the ‘struct timeval’ values X and Y,
-   storing the result in RESULT.
-   Return 1 if the difference is negative, otherwise 0. 
-   Credit goes to https://www.gnu.org/software/libc/manual/html_node/Elapsed-Time.html */
-
-int timeval_subtract (struct timeval *result, struct timeval *x, struct timeval *y) {
-  /* Perform the carry for the later subtraction by updating y. */
-  if (x->tv_usec < y->tv_usec) {
-    int nsec = (y->tv_usec - x->tv_usec) / 1000000 + 1;
-    y->tv_usec -= 1000000 * nsec;
-    y->tv_sec += nsec;
-  }
-  if (x->tv_usec - y->tv_usec > 1000000) {
-    int nsec = (x->tv_usec - y->tv_usec) / 1000000;
-    y->tv_usec += 1000000 * nsec;
-    y->tv_sec -= nsec;
-  }
-
-  /* Compute the time remaining to wait.
-     tv_usec is certainly positive. */
-  result->tv_sec = x->tv_sec - y->tv_sec;
-  result->tv_usec = x->tv_usec - y->tv_usec;
-
-  /* Return 1 if result is negative. */
-  return x->tv_sec < y->tv_sec;
-}
