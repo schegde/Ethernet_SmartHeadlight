@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <time.h>
 #include "transfer.h"
+#include <pthread.h>
 
 
 //*********************************CUSTOMIZATION**********************************
@@ -46,7 +47,7 @@ int MODE;
 //***************************************************NOTES*************************************
 // 1)   START PROCEDURE:START THE SERVER FIRST, AND THEN THE CLIENT. (This order is VERY necessary)
 // 2)   STOP PROCEDURE: SEND a configured linux SIGNAL(currently configured for ctrl+z keyboard combination) 
-//                      TO THIS PROGRAM ON *CLIENT*; CLIENT THEN SENDS A MESSAGE TO SERVER TO 
+//                      TO THIS PROGRAM ON *SERVER*; SERVER THEN SENDS A MESSAGE TO CLIENT TO 
 //                      stop itself, and reverse role if needed.
 // 3)   Minimum one transaction is needed to stop the respective roles and allow for role reversal :( 
 //      [This is a disadvantage of a blocking network socket, but non-blocking sockets are more tough to manage]
@@ -69,8 +70,14 @@ And install this handler for that signal in main();
 void sig_handler(int sig_num){
 
     STOP_FLAG = 1;      //Interrupted by an external signal.
+    DISCONTINUE_FLAG = 1;
   
   //File descriptor cleanups and malloced cleanups! connection file desctiptors in client and server
+}
+
+void sig_handler2(int sig_num){
+
+    CHANGE_FLAG = (~(CHANGE_FLAG))&(1);
 }
 
 /*
@@ -80,10 +87,21 @@ void sig_handler(int sig_num){
  * 
  */
 
+// void control_thread(){
+
+
+
+
+// }
+
 int main(int argc, char **argv) {
 
+    // pthread_t tid;
+    // pthread_create(&tid,NULL,control_thread,NULL);
+    // pthread_detach(tid); 
+
     operate_mode();
-       
+
 }
 
 
@@ -96,11 +114,9 @@ void operate_mode(){
     //another process will interrupt this program flow.
 
     Signal(SIGTSTP, sig_handler); //Ctrl-Z for interruption!
+   
 
-    CHANGE_FLAG =1; //Specify the change flag for server transmission behaviour.
-
-
-
+    
     
     while(1){
 
@@ -147,6 +163,10 @@ void operate_mode(){
 
 
 void server_mode(){
+
+    Signal(SIGQUIT, sig_handler2);
+
+    CHANGE_FLAG =0; //Specify the change flag for server transmission behaviour.
 
     //Server Mode
     int errno;
@@ -227,7 +247,7 @@ void client_mode(){
  * sendit - sends preset file to client
  */
 void send_file(int clientfd) {
-    char buf[MAXBUF];
+    //char buf[MAXBUF];
    
     rio_t clientRio;
 
@@ -235,7 +255,7 @@ void send_file(int clientfd) {
 
     int recvd_resp_indicator,resp_indicator;
 
-    bool loc_stop_flag = false;
+    int loc_stop_flag = 0;
 
     long long pointer;
 
@@ -268,18 +288,18 @@ void send_file(int clientfd) {
     //Irrespective of change flag , send the buffer for one time anyway!
     rio_writen(clientfd,send_buf_ptr,size_req);
 
-    //Read the response from the client to see weather to continue/stop/break for role reversal!
+    //Read the response from the client to see whether to continue/stop 
     rio_readnb(&clientRio,&recvd_resp_indicator,sizeof(int));
 
     if(recvd_resp_indicator==NACK){
         continue;
         //QUIT REST OF CODE, START FROM new buffer request!
     }
-    if(STOP_FLAG){
-        resp_indicator = NACK;
-        rio_writen(clientfd,&resp_indicator,sizeof(int));
-        break;
-    }
+    // if(STOP_FLAG){
+    //     resp_indicator = NACK;
+    //     rio_writen(clientfd,&resp_indicator,sizeof(int));
+    //     break;
+    // }
 
 
 
@@ -302,7 +322,7 @@ void send_file(int clientfd) {
             }
 
             if(STOP_FLAG){
-               loc_stop_flag =true;
+               loc_stop_flag =1;
                resp_indicator =  NACK;
                rio_writen(clientfd,&resp_indicator,sizeof(int));
                break;
@@ -342,8 +362,10 @@ void remove_newline_ch(char *line) {
 
 void receive_file(long long *ptr, int num_bytes, int remotefd, int * client_stop_flag) {
     
-    char buf[MAXBUF];
+    //char buf[MAXBUF];
     rio_t remoteRio;
+
+    DISCONTINUE_FLAG =0;
 
     int resp_indicator;
     int recvd_resp_indicator;
@@ -359,13 +381,13 @@ void receive_file(long long *ptr, int num_bytes, int remotefd, int * client_stop
 
 
     //*****************************************READ THE BUFFER********************************************
-    buffer_type * int_buffer_2 = (buffer_type *)malloc(num_bytes/sizeof(buffer_type));
+    buffer_type * int_buffer_2 = (buffer_type *)malloc(num_bytes);
 
     
 
-    while(1){ //If Stop_flag is raised quit!
+    while(1){ 
 
-        rio_readnb(&clientRio,&recvd_resp_indicator,sizeof(int));
+        rio_readnb(&remoteRio,&recvd_resp_indicator,sizeof(int));
 
 
         if(recvd_resp_indicator==ACK){
