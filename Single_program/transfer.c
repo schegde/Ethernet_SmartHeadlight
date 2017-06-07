@@ -93,18 +93,8 @@ void sig_handler2(int sig_num){
  * 
  */
 
-// void control_thread(){
-
-
-
-
-// }
 
 int main(int argc, char **argv) {
-
-    // pthread_t tid;
-    // pthread_create(&tid,NULL,control_thread,NULL);
-    // pthread_detach(tid); 
 
     operate_mode();
 
@@ -170,6 +160,9 @@ void operate_mode(){
 
 void server_mode(){
 
+    //Installing the signal handler for SIGINT signal. Change to appropriate signal, if 
+    //another process will interrupt this program flow.
+
     Signal(SIGINT, sig_handler2);
 
     CHANGE_FLAG =0; //Specify the change flag for server transmission behaviour.
@@ -196,7 +189,7 @@ void server_mode(){
     
     int loc_connfd = Accept(listenfd, (SA *)&clientaddr, &clientlen);
         
-    send_file(loc_connfd);
+    send_buffer(loc_connfd);
     Close(loc_connfd);
     Close(listenfd);  
 
@@ -235,7 +228,7 @@ void client_mode(){
 
         //Send the buffer pointer in long long format, and num_bytes in int:
 
-        receive_file(&buf_pointer, num_bytes, remotefd , &client_stop_flag);
+        receive_buffer(&buf_pointer, num_bytes, remotefd , &client_stop_flag);
         if(client_stop_flag){
             break;
         }             
@@ -249,7 +242,7 @@ void client_mode(){
 /*
  * sendit - sends preset file to client
  */
-void send_file(int clientfd) {
+void send_buffer(int clientfd) {
     //char buf[MAXBUF];
    
     rio_t clientRio;
@@ -367,13 +360,9 @@ void send_file(int clientfd) {
 }
 
 
-void remove_newline_ch(char *line) {
-    int new_line = strlen(line) -1;
-    if (line[new_line] == '\n')
-        line[new_line] = '\0';
-}
 
-void receive_file(long long *ptr, int num_bytes, int remotefd, int * client_stop_flag) {
+
+void receive_buffer(long long *ptr, int num_bytes, int remotefd, int * client_stop_flag) {
     
     //char buf[MAXBUF];
     rio_t remoteRio;

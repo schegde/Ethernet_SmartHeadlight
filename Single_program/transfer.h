@@ -13,8 +13,7 @@ extern int CHANGE_FLAG;
 void operate_mode();
 void server_mode();
 void client_mode();
-void send_file(int fd);
-void receive_file(long long * pointer, int num_bytes, int remotefd,int * client_stop_flag);
-void remove_newline_ch(char *line);
+void send_buffer(int fd);
+void receive_buffer(long long * pointer, int num_bytes, int remotefd,int * client_stop_flag);
 
 #endif
