@@ -41,7 +41,7 @@ int MODE;
 #define NACK 6
 #define STOP_MSG 7
 
-//********************************************************************************
+
 
 
 //***************************************************NOTES*************************************
@@ -55,9 +55,15 @@ int MODE;
 // 5)   There will be timing restrictions on The control signals(STOP/CHANGE/DISCONTINUE FLAG) are given to this program.
 //      These signals can be given from a new thread in this program, to keep it asynced with the flow control of 
 //      main thread of this program.
-
-
+// 6)  ONCE DISCONTINUE SIGNAL IS ISSUED ON CLIENT SIDE, PROGRAM RESPONDS TO IT ONLY AFTER SERVER SENDS A BUFFER TO IT.
+//     I/E THE CHANGE FLAG MUST BE CHANGED ONCE AFTER DISCONTINUE SIGNAL IS ISSUED ON CLIENT SIDE! again a result of 
+//     blocking implementation of sockets and buffered reads on the socket. A read on the socket is blocking until 
+//     specified number of bytes are read out into user space.
+// 7)  To gracefully close this system in the current state : Hit Ctrl+Z on the server to quit the roles on server and 
+//      client side, and then hit Ctrl+C on both devices respectively to close the programs (Quitting the roles de-registers
+//      the signal handlers to use Ctrl+C normally.)
 //*********************************************************************************************
+
 
 /*
 Signal handler for switching the roles between Server and client.
@@ -164,14 +170,14 @@ void operate_mode(){
 
 void server_mode(){
 
-    Signal(SIGQUIT, sig_handler2);
+    Signal(SIGINT, sig_handler2);
 
     CHANGE_FLAG =0; //Specify the change flag for server transmission behaviour.
 
     //Server Mode
     int errno;
     char port[10]=PORT;
-    int listenfd, *connfd;    
+    int listenfd;    
     struct sockaddr_in clientaddr;
     socklen_t clientlen = sizeof(clientaddr);
 
@@ -187,17 +193,14 @@ void server_mode(){
    
     printf("Successfully started a listening server on  port %s, Now connect to this port from client side!\n",port);
         
-  
     
-           
-        connfd = Malloc(sizeof(int));
-        *connfd = Accept(listenfd, (SA *)&clientaddr, &clientlen);
-        int loc_connfd = *connfd;
-        Free(connfd);
-        send_file(loc_connfd);
-        Close(loc_connfd);
-  
-    
+    int loc_connfd = Accept(listenfd, (SA *)&clientaddr, &clientlen);
+        
+    send_file(loc_connfd);
+    Close(loc_connfd);
+    Close(listenfd);  
+
+    Signal(SIGINT, SIG_DFL);
 }
 
 void client_mode(){
@@ -308,12 +311,15 @@ void send_file(int clientfd) {
     while(1){
 
         int current_value = CHANGE_FLAG;
+        printf(" ");
 
         while(1){
+            printf("\n");
 
             if((current_value)!=CHANGE_FLAG){ //Value of flag changed! send data once and wait for response!
                 //***************************NOTE************************************
                 //Time this as a constraint for change flag transition allowed times!
+                printf("Executing change send\n");
                 resp_indicator = ACK;
                 rio_writen(clientfd,&resp_indicator,sizeof(int));
                 rio_writen(clientfd,send_buf_ptr,size_req);
@@ -322,6 +328,7 @@ void send_file(int clientfd) {
             }
 
             if(STOP_FLAG){
+               printf("Role reversal interrupt!!!\n");
                loc_stop_flag =1;
                resp_indicator =  NACK;
                rio_writen(clientfd,&resp_indicator,sizeof(int));
@@ -329,11 +336,17 @@ void send_file(int clientfd) {
            }
         }
 
-        if(recvd_resp_indicator==NACK){
-            break; //execute from new buffer read request block!
-        }
+        
         if(loc_stop_flag){
             break; // Break to switch role.
+        }
+
+        if(recvd_resp_indicator==ACK){
+            printf("Postive ack from client!!! continue further\n");
+        }
+        else{
+            printf("New buffer request from client\n");
+            break; //execute from new buffer read request block!
         }
 
     }
@@ -387,10 +400,12 @@ void receive_file(long long *ptr, int num_bytes, int remotefd, int * client_stop
 
     while(1){ 
 
+        printf("Here to read server response!\n");
         rio_readnb(&remoteRio,&recvd_resp_indicator,sizeof(int));
 
 
         if(recvd_resp_indicator==ACK){
+            printf("Server response positive!, read buffer now\n");
 
             rio_readnb(&remoteRio,int_buffer_2,num_bytes);
 
@@ -405,11 +420,14 @@ void receive_file(long long *ptr, int num_bytes, int remotefd, int * client_stop
 
             if(DISCONTINUE_FLAG==0){
                 //Send ACK  and continue!
+                printf("Continue further!!sending to server\n");
                 resp_indicator = ACK;
                 rio_writen(remotefd,&resp_indicator,sizeof(int)); 
             }
             else{
                 //Send NACK and break!
+                printf("Discontinue, new buffer request, sending to server!!\n");
+                
                 resp_indicator = NACK;
                 rio_writen(remotefd,&resp_indicator,sizeof(int)); 
                 break;  
@@ -417,6 +435,7 @@ void receive_file(long long *ptr, int num_bytes, int remotefd, int * client_stop
 
         }
         else{   //NACK received. switch roles!!
+            printf("Server sent role reversal request! break!!!!\n");
             *client_stop_flag = 1;
             break;
         }
@@ -426,7 +445,7 @@ void receive_file(long long *ptr, int num_bytes, int remotefd, int * client_stop
     //******************Send ACK to keep continuing receiving or send NACK to get a chance to ask for a new buffer->
     //based on a continue flag. if continue flag =0 send ACK. if continue flag = 1 send NACK.
 
-    free(int_buffer_2);
+    Free(int_buffer_2);
 
  
    
