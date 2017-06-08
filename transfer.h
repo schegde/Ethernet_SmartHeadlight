@@ -16,5 +16,7 @@ void client_mode();
 void send_buffer(int fd);
 void receive_buffer(long long * pointer, int num_bytes, int remotefd,int * client_stop_flag);
 int timeval_subtract (struct timeval *result, struct timeval *x, struct timeval *y);
+void sig_handler();
+void sig_handler2();
 
 #endif

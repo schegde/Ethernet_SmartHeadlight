@@ -99,38 +99,38 @@ To respond to a signal sent by another process, send the appropriate signal to t
 And install this handler for that signal in operate_mode();
 
 */
-void sig_handler(int sig_num){
+// void sig_handler(int sig_num){
 
-    STOP_FLAG = 1;      
-    DISCONTINUE_FLAG = 1;
+//     STOP_FLAG = 1;      
+//     DISCONTINUE_FLAG = 1;
   
-}
+// }
 
 
-/*
-Signal handler for the SIGQUIT signal given on the server side(This handler is installed only during the server role).
-This handler toggles the change flag, which leads to the server sending the buffer that the client had requested.
-Every toggle leads to one server-to-client buffer transfer. Hit Ctrl+\ (backslash) to generate this signal on the 
-terminal, and send buffer to client.
 
-*/
-void sig_handler2(int sig_num){
-
-    CHANGE_FLAG = (~(CHANGE_FLAG))&(1);
-}
-
-/*
- * 
- * main thread.
- * 
- */
+// Signal handler for the SIGQUIT signal given on the server side(This handler is installed only during the server role).
+// This handler toggles the change flag, which leads to the server sending the buffer that the client had requested.
+// Every toggle leads to one server-to-client buffer transfer. Hit Ctrl+\ (backslash) to generate this signal on the 
+// terminal, and send buffer to client.
 
 
-int main(int argc, char **argv) {
+// void sig_handler2(int sig_num){
 
-    operate_mode();
+//     CHANGE_FLAG = (~(CHANGE_FLAG))&(1);
+// }
 
-}
+// /*
+//  * 
+//  * main thread.
+//  * 
+//  */
+
+
+// int main(int argc, char **argv) {
+
+//     operate_mode();
+
+// }
 
 
 /*
