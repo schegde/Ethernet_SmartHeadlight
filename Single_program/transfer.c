@@ -2,25 +2,25 @@
 #include <stdio.h>
 #include <time.h>
 #include "transfer.h"
-#include <pthread.h>
 
 
-//*********************************CUSTOMIZATION**********************************
+//*************************************************CUSTOMIZATION**************************************************
 
+#define PORT "6045"
 
+//Comment out the below macro to accept a port number from user, else the above defined port will be used every time
+//the program is run. Custom port numbers need to be used to fire multiple instances of program, and maintain simultaneous
+//connections(each connection with unique port number). This is useful for single server device -multiple client device 
+//scenario.Fire up the program multiple times into server mode with different port numbers, and then use those port 
+//numbers on client devices to connect to server. This gives multiple simultaneous client connections with the server.
 
-//Port number used for connections, should be a number in string format.
-#define PORT "6045" 
+#define USE_FIXED_PORT
 
-//Buffer size.
+//Buffer size allocated on server side.
 #define BUFFERSIZE 100 
 
-//Buffer type
+//Buffer type allocated on server side.
 typedef int buffer_type;
-
-
-#define SERVER_MODE 0
-#define CLIENT_MODE 1
 
 //Comment the below line to stop printing the received buffer on client side
 #define BUFFER_PRINT
@@ -28,23 +28,41 @@ typedef int buffer_type;
 //Comment the below line to stop printing most of debug info
 #define DEBUG_PRINT
 
-//This can be set by a top level application to break the listening loop, and for a chance to change mode
-int STOP_FLAG; 
+//The stop flag can be set by a top level application/or through a POSIX-LINUX signal to stop the device role
+//and for a chance to change mode-server/client. This flag is monitored only by server, and upon seeing stop flag
+//being raised, the server sends a message to client to stop it's role, and go for a mode switch.In effect , both
+//server and client stop their respective roles, and move to the role selection stage.
+volatile int STOP_FLAG; 
 
-int CHANGE_FLAG;
+//The flag that is monitored by the server to send data to client. After the first data sent, server sends buffer to
+//client only when change flag changes. 
 
-int DISCONTINUE_FLAG;
+//The time needed to complete a buffer transfer after seeing the flip of change
+//flag is around ~0.42
+volatile int CHANGE_FLAG;
 
-int MODE;
+//This flag can be set by a top level application/ or through a POSIX-LINUX signal to the client, to request for a 
+//new buffer from the server. Once it is raised on client side, the server must send data once to the client
+//(i.e change the CHANGE_FLAG) for the client to respond to this discontinue flag , and thereby send a new 
+//buffer and size request to the server. This flag is only monitored by the client.
+volatile int DISCONTINUE_FLAG;
 
-#define ACK 5 //random numbers assigned for ACK and NACK and STOP_MSG
+//The mode selection variable. Set the mode to either of below macros to specify the device role.
+volatile int MODE;
+#define SERVER_MODE 0
+#define CLIENT_MODE 1
+
+
+//random numbers assigned for ACK and NACK handshaking messages used by server and client for synchronization.
+#define ACK 5 
 #define NACK 6
-#define STOP_MSG 7
+
+
+//**********************************************************************************************************************
 
 
 
-
-//***************************************************NOTES*************************************
+//*******************************************************NOTES***************************************************************
 // 1)   START PROCEDURE:START THE SERVER FIRST, AND THEN THE CLIENT. (This order is VERY necessary)
 // 2)   STOP PROCEDURE: SEND a configured linux SIGNAL(currently configured for ctrl+z keyboard combination) 
 //                      TO THIS PROGRAM ON *SERVER*; SERVER THEN SENDS A MESSAGE TO CLIENT TO 
@@ -52,35 +70,50 @@ int MODE;
 // 3)   Minimum one transaction is needed to stop the respective roles and allow for role reversal :( 
 //      [This is a disadvantage of a blocking network socket, but non-blocking sockets are more tough to manage]
 // 4)   Every transaction implements a ACK/NACK/STOP_MSG handshaking between server and client for synchronization.
-// 5)   There will be timing restrictions on The control signals(STOP/CHANGE/DISCONTINUE FLAG) are given to this program.
+// 5)   There will be timing restrictions on The control signals(STOP/CHANGE/DISCONTINUE FLAG) that are given to this program.
 //      These signals can be given from a new thread in this program, to keep it asynced with the flow control of 
 //      main thread of this program.
-// 6)  ONCE DISCONTINUE SIGNAL IS ISSUED ON CLIENT SIDE, PROGRAM RESPONDS TO IT ONLY AFTER SERVER SENDS A BUFFER TO IT.
-//     I/E THE CHANGE FLAG MUST BE CHANGED ONCE AFTER DISCONTINUE SIGNAL IS ISSUED ON CLIENT SIDE! again a result of 
-//     blocking implementation of sockets and buffered reads on the socket. A read on the socket is blocking until 
-//     specified number of bytes are read out into user space.
-// 7)  To gracefully close this system in the current state : Hit Ctrl+Z on the server to quit the roles on server and 
-//      client side, and then hit Ctrl+C on both devices respectively to close the programs (Quitting the roles de-registers
-//      the signal handlers to use Ctrl+C normally.)
-//*********************************************************************************************
+// 6)   ONCE DISCONTINUE SIGNAL IS ISSUED ON CLIENT SIDE, PROGRAM RESPONDS TO IT ONLY AFTER SERVER SENDS A BUFFER TO IT.
+//      I/E THE CHANGE FLAG MUST BE CHANGED ONCE AFTER DISCONTINUE SIGNAL IS ISSUED ON CLIENT SIDE! again a result of 
+//      blocking implementation of sockets and buffered reads on the socket. A read on the socket is blocked until 
+//      specified number of bytes are read out into user space. The buffered implementation ensures robustness on reads/writs
+//      to the socket.
+// 7)   To gracefully close this system in the current state : Hit Ctrl+Z on the server to quit the roles on server and 
+//      client side, and then hit Ctrl+C on both devices respectively to close the programs.
+// 8)   Minimum interval between 2 successive change_flag flips, for the program to respond to both the changes , is 
+//      effectively the time needed to send the buffer from server to the client, and receive the acknowledgement.
+//      The program displays the buffer transmission time after completing a transaction, and also the average transmission time
+//      upon quitting server role(for role switch). The program doesn't respond to changes in change_flag during this interval.
+//      
+//**************************************************************************************************************************
 
 
-/*
-Signal handler for switching the roles between Server and client.
+/* 
+Signal handler for SIGTSTP signal given to this program. On server sideof , this leads to termination of roles on both 
+server and client,and allows for a role switch mode.
+On the client side, this handler leads to raising of Discontinue flag, which leads to client asking for a new buffer to the
+server.
 Currently configured to respond to  SIGTSTP Linux signal which gets generated from 
 (Ctrl+Z) keyboard combination while program is running.
 To respond to a signal sent by another process, send the appropriate signal to this program
-And install this handler for that signal in main();
+And install this handler for that signal in operate_mode();
 
 */
 void sig_handler(int sig_num){
 
-    STOP_FLAG = 1;      //Interrupted by an external signal.
+    STOP_FLAG = 1;      
     DISCONTINUE_FLAG = 1;
   
-  //File descriptor cleanups and malloced cleanups! connection file desctiptors in client and server
 }
 
+
+/*
+Signal handler for the SIGQUIT signal given on the server side(This handler is installed only during the server role).
+This handler toggles the change flag, which leads to the server sending the buffer that the client had requested.
+Every toggle leads to one server-to-client buffer transfer. Hit Ctrl+\ (backslash) to generate this signal on the 
+terminal, and send buffer to client.
+
+*/
 void sig_handler2(int sig_num){
 
     CHANGE_FLAG = (~(CHANGE_FLAG))&(1);
@@ -88,8 +121,7 @@ void sig_handler2(int sig_num){
 
 /*
  * 
- * main - binds to specified port and listens for new connections,
- * spawning threads to handle their requests
+ * main thread.
  * 
  */
 
@@ -101,25 +133,28 @@ int main(int argc, char **argv) {
 }
 
 
+/*
+Select the mode of operation . Also installs the signal handlers
+
+*/
 void operate_mode(){
 
 
     Signal(SIGPIPE, SIG_IGN);
 
     //Installing the signal handler for SIGTSSTP signal. Change to appropriate signal, if 
-    //another process will interrupt this program flow.
+    //another signal is used to interrupt this program flow.
 
     Signal(SIGTSTP, sig_handler); //Ctrl-Z for interruption!
    
 
-    
-    
+       
     while(1){
 
 
         STOP_FLAG = 0; //Reset the flag, this is a new role start!
 
-   
+
         printf("Select the mode you want to operate in? Hit 1 for client mode and 0 for server mode:");
         errno = scanf("%d",&MODE);
     
@@ -151,7 +186,7 @@ void operate_mode(){
             
         }
         else{
-            client_mode();        
+            client_mode();    //Call the client routine.    
         }
     }   
  
@@ -163,13 +198,12 @@ void server_mode(){
     //Installing the signal handler for SIGINT signal. Change to appropriate signal, if 
     //another process will interrupt this program flow.
 
-    Signal(SIGINT, sig_handler2);
+    Signal(SIGQUIT, sig_handler2);
 
-    CHANGE_FLAG =0; //Specify the change flag for server transmission behaviour.
+    CHANGE_FLAG =0; //Initialize the change flag for server transmission behaviour.
 
-    //Server Mode
+    
     int errno;
-    char port[10]=PORT;
     int listenfd;    
     struct sockaddr_in clientaddr;
     socklen_t clientlen = sizeof(clientaddr);
@@ -180,6 +214,13 @@ void server_mode(){
     #endif
 
 
+    #if defined(USE_FIXED_PORT)
+        char port[10]=PORT;
+    #else
+        char port[10];
+        printf("Enter the port number:");
+        errno = scanf("%s",port);
+    #endif
      
     listenfd = Open_listenfd(port);
 
@@ -193,7 +234,7 @@ void server_mode(){
     Close(loc_connfd);
     Close(listenfd);  
 
-    Signal(SIGINT, SIG_DFL);
+    
 }
 
 void client_mode(){
@@ -201,7 +242,6 @@ void client_mode(){
         char getName[MAXBUF];
         int num_bytes;
         char host[30];
-        char port[10]=PORT;
         int client_stop_flag=0;
 
         //Client mode
@@ -209,11 +249,21 @@ void client_mode(){
             printf("Client mode selected!\n");
         #endif        
      
-      printf("Enter the Host IP address to connect to:");
-      errno = scanf("%s",host);
-      // printf("Enter the port on the host to connect to:");
-      // errno = scanf("%s",port); 
 
+        printf("Enter the Host IP address to connect to:");
+        errno = scanf("%s",host);
+
+
+        #if defined(USE_FIXED_PORT)
+            char port[10]=PORT;
+        #else
+            char port[10];
+            printf("Enter the port number to connect to:");
+            errno = scanf("%s",port);
+        #endif
+         
+      
+     
       int remotefd = Open_clientfd(host, port);
 
     while(1) {
@@ -238,7 +288,6 @@ void client_mode(){
 }
 
 
-
 /*
  * sendit - sends preset file to client
  */
@@ -254,6 +303,9 @@ void send_buffer(int clientfd) {
     int loc_stop_flag = 0;
 
     long long pointer;
+
+    double total = 0;
+    double count = 0;
 
 
     while(1){ //Looper for new buffer request and process it!
@@ -291,27 +343,23 @@ void send_buffer(int clientfd) {
         continue;
         //QUIT REST OF CODE, START FROM new buffer request!
     }
-    // if(STOP_FLAG){
-    //     resp_indicator = NACK;
-    //     rio_writen(clientfd,&resp_indicator,sizeof(int));
-    //     break;
-    // }
-
-
-
-//***********************************************GOOD TRY*************************************
-
+   
+    
+    struct timeval start, finish, result;
+   
     while(1){
-
+        
+        
         int current_value = CHANGE_FLAG;
-        printf(" ");
-
+       
         while(1){
-            printf("\n");
+            
 
             if((current_value)!=CHANGE_FLAG){ //Value of flag changed! send data once and wait for response!
                 //***************************NOTE************************************
                 //Time this as a constraint for change flag transition allowed times!
+                
+                gettimeofday(&start, NULL);
                 printf("Executing change send\n");
                 resp_indicator = ACK;
                 rio_writen(clientfd,&resp_indicator,sizeof(int));
@@ -342,6 +390,17 @@ void send_buffer(int clientfd) {
             break; //execute from new buffer read request block!
         }
 
+
+        //Measure time needed to 
+            gettimeofday(&finish, NULL);            
+            timeval_subtract(&result, &finish, &start);
+            time_t elapsedSeconds = result.tv_sec;
+            long int elapsedMicros = result.tv_usec;
+            double elapsed = elapsedSeconds + ((double) elapsedMicros)/1000000.0;
+            printf("Buffer transmission time: %lf\n",elapsed);
+            total +=elapsed;
+            count++;
+
     }
 
     if(loc_stop_flag){
@@ -350,13 +409,9 @@ void send_buffer(int clientfd) {
 
 }
 
+    printf("Average buffer transmission time: %lf\n",(total/count));
 
-    //************************************************************************************************
-
-    #ifdef DEBUG_PRINT
-        printf("    Server: Client received buffer\n");
-    #endif  
-        
+            
 }
 
 
@@ -389,7 +444,7 @@ void receive_buffer(long long *ptr, int num_bytes, int remotefd, int * client_st
 
     while(1){ 
 
-        printf("Here to read server response!\n");
+        
         rio_readnb(&remoteRio,&recvd_resp_indicator,sizeof(int));
 
 
@@ -431,13 +486,29 @@ void receive_buffer(long long *ptr, int num_bytes, int remotefd, int * client_st
     }
     
 
-    //******************Send ACK to keep continuing receiving or send NACK to get a chance to ask for a new buffer->
-    //based on a continue flag. if continue flag =0 send ACK. if continue flag = 1 send NACK.
-
     Free(int_buffer_2);
 
- 
-   
+    
 }
 
+int timeval_subtract (struct timeval *result, struct timeval *x, struct timeval *y) {
+  /* Perform the carry for the later subtraction by updating y. */
+  if (x->tv_usec < y->tv_usec) {
+    int nsec = (y->tv_usec - x->tv_usec) / 1000000 + 1;
+    y->tv_usec -= 1000000 * nsec;
+    y->tv_sec += nsec;
+  }
+  if (x->tv_usec - y->tv_usec > 1000000) {
+    int nsec = (x->tv_usec - y->tv_usec) / 1000000;
+    y->tv_usec += 1000000 * nsec;
+    y->tv_sec -= nsec;
+  }
 
+  /* Compute the time remaining to wait.
+     tv_usec is certainly positive. */
+  result->tv_sec = x->tv_sec - y->tv_sec;
+  result->tv_usec = x->tv_usec - y->tv_usec;
+
+  /* Return 1 if result is negative. */
+  return x->tv_sec < y->tv_sec;
+}
