@@ -1,22 +1,21 @@
-Basic program to transfer images/data over ethernet between two systems running Linux. Tested on Ubuntu 14.04 on the Enclustra Mercury ZX1 module on the custom board for the headlight project.
+Single threaded Server-client model based data communication over ethernet interface between 2 linux systems, 
+specifically optimized for the embedded linux environment of Smart Headlight project at ILIM,CMU RI.
+
+
+Tested on Ubuntu 14.04 x86 image on PC, and ARM-HF image compiled for Enclustra Mercury ZX1 module on the custom board 
+of headlight project.
 
 To install simply navigate to the root directory and run 'make'.
 
-This code creates a listening(Server) and request thread(client) on respective devices that it is running.
+
+As per project requirements, the server role would be suited for the device, which will have all 
+the allocated buffers, while client role would be for the device which will request and receive these buffers.
 
 Usage: 
-Run the transfer program first on server device.
-Then run the transfer program on client device.
+1) After hitting make, just run the program : ./transfer
+2) This code begins with an option to chose the mode of operation -Server mode or client mode. 
+3) Run this program first on server device(in server role), and then run the program on client device(in client role.). 
+   This program running order is necessary!
 
 
-SERVER] ./transfer <listening port that client will connect to>
-CLIENT ] ./transfer <server IP address> <Port to connect to>
-
-
-Client's port to connect to , should be same as server's listening port.
-
-
-Example:
-SERVER] ./transfer 6045
-CLIENT] ./transfer 10.42.0.5 6045
  
