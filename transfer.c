@@ -327,10 +327,7 @@ void send_buffer(int clientfd) {
 
 
 //*********************************************SEND THE BUFFER******************************
-    // Send this buffer whenever change_flag changes, after every sent command wait for ACK. If NACK, switch to above code
-    //to receive a new buffer request and number of bytes request. All looping while blocks should also poll for the STOP_FLAG 
-    //to switch the roles. NOTE!!!! remove the STOP flag looping in previous calling function, and use it here.
-
+    
     resp_indicator = ACK;
     rio_writen(clientfd,&resp_indicator,sizeof(int));
 
@@ -357,8 +354,7 @@ void send_buffer(int clientfd) {
             
 
             if((current_value)!=CHANGE_FLAG){ //Value of flag changed! send data once and wait for response!
-                //***************************NOTE************************************
-                //Time this as a constraint for change flag transition allowed times!
+                
                 
                 gettimeofday(&start, NULL);
 
