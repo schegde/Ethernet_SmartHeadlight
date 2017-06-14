@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <time.h>
 #include "transfer.h"
+#include <limits.h>
 
 
 //*************************************************CUSTOMIZATION**************************************************
@@ -42,9 +43,8 @@ volatile int STOP_FLAG;
 volatile int CHANGE_FLAG;
 
 //This flag can be set by a top level application/ or through a POSIX-LINUX signal to the client, to request for a 
-//new buffer from the server. Once it is raised on client side, the server must send data once to the client
-//(i.e change the CHANGE_FLAG) for the client to respond to this discontinue flag , and thereby send a new 
-//buffer and size request to the server. This flag is only monitored by the client.
+//new buffer from the server. Once it is raised on client side, the client sends appropriate message to server
+//to be able to handle a new buffer request. This flag is only monitored by the client.
 volatile int DISCONTINUE_FLAG;
 
 //The mode selection variable. Set the mode to either of below macros to specify the device role.
@@ -56,6 +56,10 @@ volatile int MODE;
 //random numbers assigned for ACK and NACK handshaking messages used by server and client for synchronization.
 #define ACK 5 
 #define NACK 6
+#define IDLE 7
+
+//IDLE handshaking delay counter max limit. INT_MAX is a C macro in limits.h which gives max value of an
+#define COUNT_MAX (INT_MAX-100) 
 
 
 //**********************************************************************************************************************
@@ -73,14 +77,9 @@ volatile int MODE;
 // 5)   There will be timing restrictions on The control signals(STOP/CHANGE/DISCONTINUE FLAG) that are given to this program.
 //      These signals can be given from a new thread in this program, to keep it asynced with the flow control of 
 //      main thread of this program.
-// 6)   ONCE DISCONTINUE SIGNAL IS ISSUED ON CLIENT SIDE, PROGRAM RESPONDS TO IT ONLY AFTER SERVER SENDS A BUFFER TO IT.
-//      I/E THE CHANGE FLAG MUST BE CHANGED ONCE AFTER DISCONTINUE SIGNAL IS ISSUED ON CLIENT SIDE! again a result of 
-//      blocking implementation of sockets and buffered reads on the socket. A read on the socket is blocked until 
-//      specified number of bytes are read out into user space. The buffered implementation ensures robustness on reads/writs
-//      to the socket.
-// 7)   To gracefully close this system in the current state : Hit Ctrl+Z on the server to quit the roles on server and 
+// 6)   To gracefully close this system in the current state : Hit Ctrl+Z on the server to quit the roles on server and 
 //      client side, and then hit Ctrl+C on both devices respectively to close the programs.
-// 8)   Minimum interval between 2 successive change_flag flips, for the program to respond to both the changes , is 
+// 7)   Minimum interval between 2 successive change_flag flips, for the program to respond to both the changes , is 
 //      effectively the time needed to send the buffer from server to the client, and receive the acknowledgement.
 //      The program displays the buffer transmission time after completing a transaction, and also the average transmission time
 //      upon quitting server role(for role switch). The program doesn't respond to changes in change_flag during this interval.
@@ -307,6 +306,8 @@ void send_buffer(int clientfd) {
     double total = 0;
     double count = 0;
 
+    int counter = 0;
+
 
     while(1){ //Looper for new buffer request and process it!
 
@@ -360,7 +361,11 @@ void send_buffer(int clientfd) {
                 //Time this as a constraint for change flag transition allowed times!
                 
                 gettimeofday(&start, NULL);
-                printf("Executing change send\n");
+
+                #ifdef DEBUG_PRINT
+                    printf("Executing change send\n");
+                #endif
+                
                 resp_indicator = ACK;
                 rio_writen(clientfd,&resp_indicator,sizeof(int));
                 rio_writen(clientfd,send_buf_ptr,size_req);
@@ -369,12 +374,32 @@ void send_buffer(int clientfd) {
             }
 
             if(STOP_FLAG){
-               printf("Role reversal interrupt!!!\n");
+               
+               #ifdef DEBUG_PRINT
+                    printf("Role reversal interrupt!!!\n");
+                #endif
+               
                loc_stop_flag =1;
                resp_indicator =  NACK;
                rio_writen(clientfd,&resp_indicator,sizeof(int));
                break;
            }
+
+           counter++;
+           //Delay counter for idle handshaking to avoid blocking on the sockets!.
+           if(counter == COUNT_MAX){
+                counter = 0;
+                
+                resp_indicator = IDLE;
+                rio_writen(clientfd,&resp_indicator,sizeof(int));
+                rio_readnb(&clientRio,&recvd_resp_indicator,sizeof(int));
+                if(recvd_resp_indicator != IDLE)
+                    break;
+
+           }
+
+
+
         }
 
         
@@ -383,10 +408,15 @@ void send_buffer(int clientfd) {
         }
 
         if(recvd_resp_indicator==ACK){
-            printf("Postive ack from client!!! continue further\n");
+            #ifdef DEBUG_PRINT
+                    printf("Postive ack from client!!! continue further\n");
+            #endif            
         }
         else{
-            printf("New buffer request from client\n");
+
+            #ifdef DEBUG_PRINT
+                printf("New buffer request from client\n");
+            #endif            
             break; //execute from new buffer read request block!
         }
 
@@ -397,7 +427,10 @@ void send_buffer(int clientfd) {
             time_t elapsedSeconds = result.tv_sec;
             long int elapsedMicros = result.tv_usec;
             double elapsed = elapsedSeconds + ((double) elapsedMicros)/1000000.0;
-            printf("Buffer transmission time: %lf\n",elapsed);
+
+            #ifdef DEBUG_PRINT
+                printf("Buffer transmission time: %lf\n",elapsed);
+            #endif            
             total +=elapsed;
             count++;
 
@@ -408,9 +441,11 @@ void send_buffer(int clientfd) {
     }
 
 }
-
-    printf("Average buffer transmission time: %lf\n",(total/count));
-
+    
+    #ifdef DEBUG_PRINT
+            printf("Average buffer transmission time: %lf\n",(total/count));
+    #endif 
+    
             
 }
 
@@ -449,7 +484,11 @@ void receive_buffer(long long *ptr, int num_bytes, int remotefd, int * client_st
 
 
         if(recvd_resp_indicator==ACK){
-            printf("Server response positive!, read buffer now\n");
+
+            #ifdef DEBUG_PRINT
+                printf("Server response positive!, read buffer now\n");
+            #endif 
+           
 
             rio_readnb(&remoteRio,int_buffer_2,num_bytes);
 
@@ -463,25 +502,59 @@ void receive_buffer(long long *ptr, int num_bytes, int remotefd, int * client_st
             //***********************************************************************************************************
 
             if(DISCONTINUE_FLAG==0){
+                
+                #ifdef DEBUG_PRINT
+                    printf("Continue further!!sending to server\n");
+                #endif
+
                 //Send ACK  and continue!
-                printf("Continue further!!sending to server\n");
                 resp_indicator = ACK;
                 rio_writen(remotefd,&resp_indicator,sizeof(int)); 
             }
             else{
-                //Send NACK and break!
-                printf("Discontinue, new buffer request, sending to server!!\n");
                 
+                #ifdef DEBUG_PRINT
+                    printf("Discontinue, new buffer request, sending to server!!\n");
+                #endif                
+                
+                //Send NACK and break!
                 resp_indicator = NACK;
                 rio_writen(remotefd,&resp_indicator,sizeof(int)); 
                 break;  
             }
 
         }
-        else{   //NACK received. switch roles!!
-            printf("Server sent role reversal request! break!!!!\n");
+        else if(recvd_resp_indicator==NACK){   //NACK received. switch roles!!
+
+            #ifdef DEBUG_PRINT
+                printf("Server sent role reversal request! break!!!!\n");
+            #endif 
+            
             *client_stop_flag = 1;
             break;
+        }
+        else{ //IDLE connection handshaking!.
+
+            if(DISCONTINUE_FLAG==0){
+                                
+                //Send IDLE connection handshaking and continue!
+                resp_indicator = IDLE;
+                rio_writen(remotefd,&resp_indicator,sizeof(int)); 
+            }
+            else{
+
+                //Flag raised! discontinue!
+
+                #ifdef DEBUG_PRINT
+                    printf("Discontinue, New buffer request, sending to server!!\n");
+                #endif                
+                
+                //Send NACK and break!
+                resp_indicator = NACK;
+                rio_writen(remotefd,&resp_indicator,sizeof(int)); 
+                break;  
+            }
+
         }
     }
     

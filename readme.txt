@@ -17,5 +17,5 @@ Usage:
 3) Run this program first on server device(in server role), and then run the program on client device(in client role.). 
    This program running order is necessary!
 
-
+NOTE: Master branch hosts a demo application(transfer.c) that shows all the functionality required. The external_driver branch shows an 	  external C application(transfer_app.c) controlling the transfer program through the transfer.h API.
  
