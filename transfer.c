@@ -58,7 +58,10 @@ volatile int MODE;
 #define NACK 6
 #define IDLE 7
 
-//IDLE handshaking delay counter max limit. INT_MAX is a C macro in limits.h which gives max value of an
+//IDLE handshaking delay counter max limit. INT_MAX is a C macro in limits.h which gives max value of integer 
+//data type. If you find the delay between raising discontinue flag on client(new buffer request), and the client response 
+//to it, to be more than desirable, then reduce the COUNT_MAX value, to reduce the delay between successive IDLE handshaking
+//data exchange between server and client. 
 #define COUNT_MAX (INT_MAX-100) 
 
 
@@ -87,77 +90,23 @@ volatile int MODE;
 //**************************************************************************************************************************
 
 
-/* 
-Signal handler for SIGTSTP signal given to this program. On server sideof , this leads to termination of roles on both 
-server and client,and allows for a role switch mode.
-On the client side, this handler leads to raising of Discontinue flag, which leads to client asking for a new buffer to the
-server.
-Currently configured to respond to  SIGTSTP Linux signal which gets generated from 
-(Ctrl+Z) keyboard combination while program is running.
-To respond to a signal sent by another process, send the appropriate signal to this program
-And install this handler for that signal in operate_mode();
-
-*/
-// void sig_handler(int sig_num){
-
-//     STOP_FLAG = 1;      
-//     DISCONTINUE_FLAG = 1;
-  
-// }
-
-
-
-// Signal handler for the SIGQUIT signal given on the server side(This handler is installed only during the server role).
-// This handler toggles the change flag, which leads to the server sending the buffer that the client had requested.
-// Every toggle leads to one server-to-client buffer transfer. Hit Ctrl+\ (backslash) to generate this signal on the 
-// terminal, and send buffer to client.
-
-
-// void sig_handler2(int sig_num){
-
-//     CHANGE_FLAG = (~(CHANGE_FLAG))&(1);
-// }
-
-// /*
-//  * 
-//  * main thread.
-//  * 
-//  */
-
-
-// int main(int argc, char **argv) {
-
-//     operate_mode();
-
-// }
 
 
 /*
 Select the mode of operation . Also installs the signal handlers
-
 */
 void operate_mode(){
 
 
-    Signal(SIGPIPE, SIG_IGN);
-
-    //Installing the signal handler for SIGTSSTP signal. Change to appropriate signal, if 
-    //another signal is used to interrupt this program flow.
-
-    Signal(SIGTSTP, sig_handler); //Ctrl-Z for interruption!
-   
-
-       
+           
     while(1){
 
 
         STOP_FLAG = 0; //Reset the flag, this is a new role start!
 
-
         printf("Select the mode you want to operate in? Hit 1 for client mode and 0 for server mode:");
         errno = scanf("%d",&MODE);
     
-
         
         if(MODE==SERVER_MODE){
 
@@ -194,14 +143,9 @@ void operate_mode(){
 
 void server_mode(){
 
-    //Installing the signal handler for SIGINT signal. Change to appropriate signal, if 
-    //another process will interrupt this program flow.
-
-    Signal(SIGQUIT, sig_handler2);
 
     CHANGE_FLAG =0; //Initialize the change flag for server transmission behaviour.
-
-    
+   
     int errno;
     int listenfd;    
     struct sockaddr_in clientaddr;
@@ -232,7 +176,6 @@ void server_mode(){
     send_buffer(loc_connfd);
     Close(loc_connfd);
     Close(listenfd);  
-
     
 }
 

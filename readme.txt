@@ -12,7 +12,7 @@ As per project requirements, the server role would be suited for the device, whi
 the allocated buffers, while client role would be for the device which will request and receive these buffers.
 
 Usage: 
-1) After hitting make, just run the program : ./transfer
+1) After hitting make, just run the program : ./transfer_app
 2) This code begins with an option to chose the mode of operation -Server mode or client mode. 
 3) Run this program first on server device(in server role), and then run the program on client device(in client role.). 
    This program running order is necessary!
